@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SlopShield</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">S</span>
+          <div>
+            <h1>SlopShield</h1>
+            <p class="subtitle">YouTube feed filter</p>
+          </div>
+        </div>
+        <label class="switch" aria-label="Enable SlopShield">
+          <input id="enabled" type="checkbox" />
+          <span class="switch-track"><span class="switch-knob"></span></span>
+        </label>
+      </header>
+
+      <section class="status-panel" aria-live="polite">
+        <div class="status-copy">
+          <span id="statusDot" class="status-dot"></span>
+          <span id="statusText">Checking local engine…</span>
+        </div>
+        <span id="latency" class="latency">—</span>
+      </section>
+
+      <section class="control-panel">
+        <div class="control-heading">
+          <div>
+            <h2>Strictness</h2>
+            <p class="section-copy">Higher values flag more videos.</p>
+          </div>
+          <output id="strictnessValue" for="strictness">30</output>
+        </div>
+
+        <input id="strictness" type="range" min="0" max="100" step="1" value="30" />
+        <div class="range-labels" aria-hidden="true">
+          <span>Low</span>
+          <span>Balanced</span>
+          <span>High</span>
+        </div>
+      </section>
+
+      <section class="setting-row">
+        <div>
+          <h2>Preview mock scores</h2>
+          <p class="section-copy">Label cards instead of hiding flagged videos.</p>
+        </div>
+        <label class="switch switch-small" aria-label="Preview mock scores">
+          <input id="previewMode" type="checkbox" />
+          <span class="switch-track"><span class="switch-knob"></span></span>
+        </label>
+      </section>
+
+      <section class="counter-panel">
+        <p class="counter-label">Flagged on this page</p>
+        <p id="blockedCount" class="counter">00</p>
+      </section>
+
+      <footer>
+        <span>Mock API · localhost:8787</span>
+        <span class="version">v0.3</span>
+      </footer>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
