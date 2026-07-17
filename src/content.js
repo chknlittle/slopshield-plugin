@@ -1,4 +1,5 @@
 (() => {
+  const extensionApi = globalThis.browser ?? globalThis.chrome;
   const DEFAULT_SETTINGS = { enabled: true };
   const CARD_SELECTOR = [
     "ytd-rich-item-renderer",
@@ -21,9 +22,9 @@
   void initialize();
 
   async function initialize() {
-    settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+    settings = await extensionApi.storage.sync.get(DEFAULT_SETTINGS);
 
-    chrome.storage.onChanged.addListener((changes, areaName) => {
+    extensionApi.storage.onChanged.addListener((changes, areaName) => {
       if (areaName !== "sync" || !changes.enabled) return;
       settings.enabled = changes.enabled.newValue;
 
@@ -42,7 +43,7 @@
     new MutationObserver(() => scheduleScan())
       .observe(document.documentElement, { childList: true, subtree: true });
 
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    extensionApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type !== "GET_PAGE_STATS") return false;
       sendResponse(getPageStats());
       return false;
@@ -119,7 +120,7 @@
 
     let retryDelay = null;
     try {
-      const response = await chrome.runtime.sendMessage({ type: "ANALYZE_VIDEOS", videos: batch });
+      const response = await extensionApi.runtime.sendMessage({ type: "ANALYZE_VIDEOS", videos: batch });
       if (requestGeneration !== generation) return;
       if (!response?.ok) throw new Error(response?.error || "Analysis failed");
 
@@ -139,11 +140,11 @@
         retryDelay = 2_000;
       }
 
-      await chrome.storage.local.set({ lastApiError: null });
+      await extensionApi.storage.local.set({ lastApiError: null });
       removePageNotice();
       updateBlockedCount();
     } catch (error) {
-      await chrome.storage.local.set({ lastApiError: error.message });
+      await extensionApi.storage.local.set({ lastApiError: error.message });
       showPageNotice("SlopShield cannot reach the API at localhost:3000");
       for (const video of batch) analysisQueue.set(video.videoId, video);
       retryDelay = 4_000;
@@ -212,7 +213,7 @@
 
   function updateBlockedCount() {
     const { flaggedCount } = getPageStats();
-    void chrome.storage.local.set({
+    void extensionApi.storage.local.set({
       lastScanAt: Date.now(),
       lastPageFlaggedCount: flaggedCount,
     });

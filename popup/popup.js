@@ -1,3 +1,4 @@
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 const DEFAULT_SETTINGS = { enabled: true };
 
 const enabledInput = document.querySelector("#enabled");
@@ -9,10 +10,10 @@ const latency = document.querySelector("#latency");
 void initialize();
 
 async function initialize() {
-  const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+  const settings = await extensionApi.storage.sync.get(DEFAULT_SETTINGS);
   enabledInput.checked = settings.enabled;
   enabledInput.addEventListener("change", async () => {
-    await chrome.storage.sync.set({ enabled: enabledInput.checked });
+    await extensionApi.storage.sync.set({ enabled: enabledInput.checked });
   });
 
   await Promise.all([refreshHealth(), refreshPageStats()]);
@@ -20,7 +21,7 @@ async function initialize() {
 
 async function refreshHealth() {
   try {
-    const health = await chrome.runtime.sendMessage({ type: "HEALTH_CHECK" });
+    const health = await extensionApi.runtime.sendMessage({ type: "HEALTH_CHECK" });
     if (!health?.ok) throw new Error(health?.error || "Unavailable");
 
     statusDot.className = health.engineReachable ? "status-dot online" : "status-dot offline";
@@ -37,10 +38,10 @@ async function refreshHealth() {
 
 async function refreshPageStats() {
   try {
-    const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const [activeTab] = await extensionApi.tabs.query({ active: true, currentWindow: true });
     if (!activeTab?.id) throw new Error("No active tab");
 
-    const stats = await chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_STATS" });
+    const stats = await extensionApi.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_STATS" });
     renderCount(stats?.flaggedCount ?? 0);
   } catch {
     renderCount(0);

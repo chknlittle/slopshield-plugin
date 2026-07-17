@@ -1,12 +1,13 @@
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 const API_BASE_URL = "https://slopshield-api.chkn.computer";
 const DEFAULT_SETTINGS = Object.freeze({ enabled: true });
 
-chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-  await chrome.storage.sync.set(current);
+extensionApi.runtime.onInstalled.addListener(async () => {
+  const current = await extensionApi.storage.sync.get(DEFAULT_SETTINGS);
+  await extensionApi.storage.sync.set(current);
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+extensionApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === "ANALYZE_VIDEOS") {
     analyzeVideos(message.videos)
       .then(sendResponse)
@@ -27,7 +28,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 async function analyzeVideos(videos) {
   if (!Array.isArray(videos) || videos.length === 0) return { ok: true, results: [] };
 
-  const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
+  const settings = await extensionApi.storage.sync.get(DEFAULT_SETTINGS);
   if (!settings.enabled) return { ok: true, results: [] };
 
   const batch = videos.slice(0, 100);
