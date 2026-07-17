@@ -1,9 +1,5 @@
-const DEFAULT_SETTINGS = Object.freeze({
-  enabled: true,
-  strictness: 30,
-  previewMode: true,
-  apiBaseUrl: "http://localhost:8787",
-});
+const API_BASE_URL = "https://slopshield-api.chkn.computer";
+const DEFAULT_SETTINGS = Object.freeze({ enabled: true });
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.sync.get(DEFAULT_SETTINGS);
@@ -11,8 +7,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === "CLASSIFY_VIDEOS") {
-    classifyVideos(message.videos)
+  if (message?.type === "ANALYZE_VIDEOS") {
+    analyzeVideos(message.videos)
       .then(sendResponse)
       .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
@@ -28,64 +24,48 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return false;
 });
 
-async function classifyVideos(videos) {
-  if (!Array.isArray(videos) || videos.length === 0) {
-    return { ok: true, results: [] };
-  }
+async function analyzeVideos(videos) {
+  if (!Array.isArray(videos) || videos.length === 0) return { ok: true, results: [] };
 
   const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-  if (!settings.enabled) {
-    return { ok: true, results: [] };
-  }
+  if (!settings.enabled) return { ok: true, results: [] };
 
-  const strictness = clamp(Number(settings.strictness), 0, 100);
-  const threshold = 1 - strictness / 100;
-  const response = await fetch(`${normalizeBaseUrl(settings.apiBaseUrl)}/v1/classify`, {
+  const batch = videos.slice(0, 100);
+  const response = await fetch(`${API_BASE_URL}/v1/analyses`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client: { name: "slopshield-extension", version: "0.3.0" },
-      strictness,
-      threshold,
-      videos: videos.slice(0, 100),
-    }),
+    body: JSON.stringify({ urls: batch.map((video) => video.url) }),
   });
 
-  if (!response.ok) {
-    throw new Error(`Classification API returned HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`SlopShield API returned HTTP ${response.status}`);
 
   const payload = await response.json();
-  if (!Array.isArray(payload.results)) {
-    throw new Error("Classification API response is missing results");
+  if (!Array.isArray(payload.analyses)) {
+    throw new Error("SlopShield API response is missing analyses");
   }
 
-  await chrome.storage.local.set({ lastApiError: null });
-  return { ok: true, results: payload.results };
-}
-
-async function checkHealth() {
-  const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
-  const startedAt = performance.now();
-  const response = await fetch(`${normalizeBaseUrl(settings.apiBaseUrl)}/health`);
-
-  if (!response.ok) {
-    throw new Error(`Mock server returned HTTP ${response.status}`);
-  }
-
-  const payload = await response.json();
   return {
-    ok: payload.status === "ok",
-    mode: payload.mode ?? "unknown",
-    latencyMs: Math.round(performance.now() - startedAt),
+    ok: true,
+    results: payload.analyses.map((analysis, index) => ({
+      videoId: batch[index]?.videoId,
+      status: analysis.status,
+      isAi: analysis.is_ai,
+      error: analysis.error,
+    })),
   };
 }
 
-function normalizeBaseUrl(value) {
-  return String(value || DEFAULT_SETTINGS.apiBaseUrl).replace(/\/+$/, "");
-}
+async function checkHealth() {
+  const startedAt = performance.now();
+  const response = await fetch(`${API_BASE_URL}/health`);
 
-function clamp(value, min, max) {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(max, Math.max(min, value));
+  if (!response.ok) throw new Error(`SlopShield API returned HTTP ${response.status}`);
+
+  const health = await response.json();
+  return {
+    ok: health.ok === true,
+    engineReachable: health.engine?.reachable === true,
+    engineVersion: health.engine?.version ?? "unknown",
+    latencyMs: Math.round(performance.now() - startedAt),
+  };
 }
