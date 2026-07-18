@@ -57,7 +57,6 @@ async function analyzeVideos(videos) {
       status: analysis.status,
       needsTranscript: analysis.needs_transcript === true,
       isAi: analysis.is_ai,
-      error: analysis.error,
     })),
   };
 }

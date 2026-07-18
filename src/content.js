@@ -27,7 +27,6 @@
   const transcriptFailures = new Map();
   const classificationByVideoId = new Map();
   const transcriptRequests = new Map();
-  const bridgeReady = Promise.resolve();
 
   window.addEventListener("message", receiveTranscriptResponse);
   void initialize();
@@ -42,7 +41,6 @@
       if (!settings.enabled || isShortsPage()) {
         revealAllCards();
         removePageNotice();
-        updateBlockedCount();
         return;
       }
 
@@ -158,11 +156,8 @@
         }
       }
 
-      await extensionApi.storage.local.set({ lastApiError: null });
       removePageNotice();
-      updateBlockedCount();
     } catch (error) {
-      await extensionApi.storage.local.set({ lastApiError: error.message });
       showPageNotice("SlopShield cannot reach its API");
       for (const video of batch) analysisQueue.set(video.videoId, video);
       retryDelay = 5_000;
@@ -237,7 +232,6 @@
   }
 
   async function requestTranscript(videoId) {
-    await bridgeReady;
     const requestId = crypto.randomUUID();
 
     return new Promise((resolve, reject) => {
@@ -304,7 +298,6 @@
     for (const [videoId, isAi] of classificationByVideoId) {
       for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, isAi);
     }
-    updateBlockedCount();
   }
 
   function revealAllCards() {
@@ -327,29 +320,17 @@
     document.querySelector(".slopshield-page-notice")?.remove();
   }
 
-  function updateBlockedCount() {
-    const { flaggedCount } = getPageStats();
-    void extensionApi.storage.local.set({
-      lastScanAt: Date.now(),
-      lastPageFlaggedCount: flaggedCount,
-    });
-  }
-
   function getPageStats() {
     const flaggedVideoIds = new Set();
-    const scannedVideoIds = new Set();
 
     for (const card of document.querySelectorAll(CARD_SELECTOR)) {
       const videoId = card.dataset.slopshieldVideoId;
-      if (!videoId) continue;
-      scannedVideoIds.add(videoId);
-      if (card.classList.contains(HIDDEN_CLASS)) flaggedVideoIds.add(videoId);
+      if (videoId && card.classList.contains(HIDDEN_CLASS)) {
+        flaggedVideoIds.add(videoId);
+      }
     }
 
-    return {
-      flaggedCount: flaggedVideoIds.size,
-      scannedCount: scannedVideoIds.size,
-    };
+    return { flaggedCount: flaggedVideoIds.size };
   }
 
   function isShortsPage() {

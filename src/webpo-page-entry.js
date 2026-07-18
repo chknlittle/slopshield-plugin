@@ -63,12 +63,7 @@ if (!globalThis.__slopShieldTranscriptBridge) {
     const transcript = transcriptFromJson3(JSON.parse(captionText));
     if (!transcript) throw new Error("YouTube transcript contained no caption segments");
 
-    return {
-      videoId,
-      transcript,
-      language: track.languageCode,
-      generated: track.kind === "asr",
-    };
+    return { transcript };
   }
 
   function getMinter() {
