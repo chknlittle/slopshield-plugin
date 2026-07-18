@@ -2,6 +2,45 @@
   display: none !important;
 }
 
+.slopshield-thumbnail {
+  position: relative !important;
+}
+
+.slopshield-status-badge {
+  position: absolute;
+  z-index: 20;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(20, 24, 31, 0.9);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  font: 600 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.slopshield-status-badge[data-status="verified"] {
+  border-color: rgba(88, 214, 141, 0.65);
+  background: rgba(15, 105, 65, 0.92);
+}
+
+.slopshield-status-badge[data-status="processing"] {
+  border-color: rgba(255, 196, 87, 0.65);
+  background: rgba(115, 75, 10, 0.92);
+}
+
+.slopshield-status-badge[data-status="would-hide"] {
+  border-color: rgba(255, 112, 112, 0.75);
+  background: rgba(145, 35, 35, 0.94);
+}
+
 .slopshield-page-notice {
   position: fixed;
   z-index: 2147483647;

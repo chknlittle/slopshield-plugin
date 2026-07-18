@@ -33,7 +33,7 @@ The popup reports API/engine health and the number of AI videos hidden on the cu
 
 ## Behavior
 
-The extension first sends visible video URLs to `POST /v1/analyses` in batches of up to 50.
+The extension first sends discovered video URLs to `POST /v1/analyses` in batches of up to 50. Cached classifications are applied immediately, but an uncached video's transcript is fetched only after one of its cards enters the viewport.
 
 - `completed` with `is_ai: true`: hide the video card.
 - `completed` with `is_ai: false`: leave it visible.
@@ -41,9 +41,9 @@ The extension first sends visible video URLs to `POST /v1/analyses` in batches o
 - `missing` with `needs_transcript: true`: fetch captions in Firefox and submit them.
 - `failed` or invalid: leave it visible.
 
-For missing videos, the page bridge runs YouTube's BotGuard challenge once, reuses its WebPO minter, mints a content-bound token per video, and fetches timestamped captions through the user's IP/session. At most two transcript jobs run concurrently. No hidden tabs or video navigation are used.
+For missing videos that enter the viewport, the page bridge runs YouTube's BotGuard challenge once, reuses its WebPO minter, mints a content-bound token per video, and fetches timestamped captions through the user's IP/session. Transcript jobs run one at a time with at least 1 second between starts. Transient YouTube/network failures trigger a shared exponential cooldown (30 seconds up to 5 minutes) so one rate limit cannot cause a retry storm. No hidden tabs or video navigation are used.
 
-Results are cached by the backend. The extension never hides a video because of an engine, transcript, or network failure.
+Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending and `✓ Verified` when a completed analysis says the video is not AI-generated. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals already-classified AI cards with an `AI detected` badge, making the disabled state useful as a preview. Failed or unavailable analyses receive no badge and remain visible.
 
 YouTube Shorts and Shorts shelves are intentionally ignored.
 

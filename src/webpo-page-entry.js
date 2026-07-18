@@ -28,6 +28,7 @@ if (!globalThis.__slopShieldTranscriptBridge) {
           requestId,
           ok: false,
           error: error instanceof Error ? error.message : String(error),
+          retryable: isRetryableError(error),
         }, "*");
       });
   });
@@ -126,6 +127,13 @@ if (!globalThis.__slopShieldTranscriptBridge) {
     }
     return globalThis.__slopShieldTrustedTypesPolicy;
   }
+}
+
+function isRetryableError(error) {
+  if (error instanceof TypeError) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  const status = Number(message.match(/HTTP (\d{3})/)?.[1]);
+  return status === 408 || status === 429 || status >= 500;
 }
 
 function buildCaptionUrl(baseUrl, poToken) {

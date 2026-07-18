@@ -9,15 +9,22 @@
     "yt-lockup-view-model",
   ].join(",");
   const HIDDEN_CLASS = "slopshield-hidden";
+  const STATUS_BADGE_CLASS = "slopshield-status-badge";
   const TRANSCRIPT_REQUEST = "SLOPSHIELD_TRANSCRIPT_REQUEST";
   const TRANSCRIPT_RESPONSE = "SLOPSHIELD_TRANSCRIPT_RESPONSE";
-  const TRANSCRIPT_CONCURRENCY = 2;
+  const TRANSCRIPT_CONCURRENCY = 1;
+  const TRANSCRIPT_MIN_INTERVAL_MS = 1_000;
+  const TRANSCRIPT_BACKOFF_BASE_MS = 30_000;
+  const TRANSCRIPT_BACKOFF_MAX_MS = 5 * 60_000;
 
   let settings = { ...DEFAULT_SETTINGS };
   let scanTimer = null;
   let analysisTimer = null;
+  let transcriptTimer = null;
   let generation = 0;
   let transcriptInFlight = 0;
+  let transcriptNextStartAt = 0;
+  let transcriptFailureStreak = 0;
   const cardsByVideoId = new Map();
   const analysisQueue = new Map();
   const transcriptQueue = new Map();
@@ -25,8 +32,12 @@
   const transcriptPendingIds = new Set();
   const transcriptRetryIds = new Set();
   const transcriptFailures = new Map();
+  const transcriptNeededVideos = new Map();
   const classificationByVideoId = new Map();
+  const failedVideoIds = new Set();
   const transcriptRequests = new Map();
+  const observedCards = new WeakSet();
+  const viewportObserver = new IntersectionObserver(handleViewportChanges, { threshold: 0.01 });
 
   window.addEventListener("message", receiveTranscriptResponse);
   void initialize();
@@ -41,6 +52,8 @@
       if (!settings.enabled || isShortsPage()) {
         revealAllCards();
         removePageNotice();
+        reapplyKnownClassifications();
+        clearUnknownCardStatuses();
         return;
       }
 
@@ -65,17 +78,22 @@
     generation += 1;
     window.clearTimeout(scanTimer);
     window.clearTimeout(analysisTimer);
+    window.clearTimeout(transcriptTimer);
     scanTimer = null;
     analysisTimer = null;
+    transcriptTimer = null;
     analysisQueue.clear();
     transcriptQueue.clear();
     pendingIds.clear();
     transcriptPendingIds.clear();
     transcriptRetryIds.clear();
     transcriptFailures.clear();
+    transcriptNeededVideos.clear();
     classificationByVideoId.clear();
+    failedVideoIds.clear();
     cardsByVideoId.clear();
     revealAllCards();
+    clearAllCardStatuses();
     scheduleScan(0);
   }
 
@@ -105,12 +123,19 @@
 
       if (classificationByVideoId.has(video.videoId)) {
         applyClassification(card, classificationByVideoId.get(video.videoId));
-      } else if (
-        !pendingIds.has(video.videoId) &&
-        !transcriptPendingIds.has(video.videoId) &&
-        !transcriptRetryIds.has(video.videoId)
-      ) {
-        analysisQueue.set(video.videoId, video);
+      } else if (failedVideoIds.has(video.videoId)) {
+        setCardStatus(card, null);
+      } else {
+        setCardStatus(card, "processing");
+        if (transcriptNeededVideos.has(video.videoId)) {
+          if (isCardInViewport(card)) enqueueTranscript(video);
+        } else if (
+          !pendingIds.has(video.videoId) &&
+          !transcriptPendingIds.has(video.videoId) &&
+          !transcriptRetryIds.has(video.videoId)
+        ) {
+          analysisQueue.set(video.videoId, video);
+        }
       }
     }
 
@@ -147,9 +172,9 @@
         if (result?.status === "completed" && typeof result.isAi === "boolean") {
           saveClassification(video.videoId, result.isAi);
         } else if (result?.status === "missing" && result.needsTranscript === true) {
-          enqueueTranscript(video);
+          markTranscriptNeeded(video);
         } else if (result?.status === "failed") {
-          saveClassification(video.videoId, false);
+          markFailed(video.videoId);
         } else {
           analysisQueue.set(video.videoId, video);
           retryDelay = 3_000;
@@ -167,29 +192,74 @@
     }
   }
 
+  function markTranscriptNeeded(video) {
+    transcriptNeededVideos.set(video.videoId, video);
+    for (const card of cardsByVideoId.get(video.videoId) ?? []) {
+      if (isCardInViewport(card)) {
+        enqueueTranscript(video);
+        break;
+      }
+    }
+  }
+
+  function handleViewportChanges(entries) {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const video = transcriptNeededVideos.get(entry.target.dataset.slopshieldVideoId);
+      if (video) enqueueTranscript(video);
+    }
+  }
+
+  function isCardInViewport(card) {
+    const rect = card.getBoundingClientRect();
+    return rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+  }
+
   function enqueueTranscript(video) {
-    if (classificationByVideoId.has(video.videoId) || transcriptPendingIds.has(video.videoId)) return;
+    if (
+      classificationByVideoId.has(video.videoId) ||
+      transcriptPendingIds.has(video.videoId) ||
+      transcriptRetryIds.has(video.videoId)
+    ) return;
     transcriptQueue.set(video.videoId, video);
     transcriptPendingIds.add(video.videoId);
     pumpTranscriptQueue();
   }
 
   function pumpTranscriptQueue() {
-    while (settings.enabled && transcriptInFlight < TRANSCRIPT_CONCURRENCY && transcriptQueue.size > 0) {
-      const [videoId, video] = transcriptQueue.entries().next().value;
-      transcriptQueue.delete(videoId);
-      transcriptInFlight += 1;
-      void fetchAndSubmitTranscript(video, generation).finally(() => {
-        transcriptInFlight -= 1;
-        transcriptPendingIds.delete(videoId);
+    if (
+      !settings.enabled ||
+      transcriptInFlight >= TRANSCRIPT_CONCURRENCY ||
+      transcriptQueue.size === 0 ||
+      transcriptTimer !== null
+    ) return;
+
+    const delay = Math.max(0, transcriptNextStartAt - Date.now());
+    if (delay > 0) {
+      transcriptTimer = window.setTimeout(() => {
+        transcriptTimer = null;
         pumpTranscriptQueue();
-      });
+      }, delay);
+      return;
     }
+
+    const [videoId, video] = transcriptQueue.entries().next().value;
+    transcriptQueue.delete(videoId);
+    transcriptInFlight += 1;
+    transcriptNextStartAt = Date.now() + TRANSCRIPT_MIN_INTERVAL_MS;
+    void fetchAndSubmitTranscript(video, generation).finally(() => {
+      transcriptInFlight -= 1;
+      transcriptPendingIds.delete(videoId);
+      pumpTranscriptQueue();
+    });
   }
 
   async function fetchAndSubmitTranscript(video, requestGeneration) {
+    let transcriptFetched = false;
     try {
       const transcript = await requestTranscript(video.videoId);
+      transcriptFetched = true;
+      transcriptFailureStreak = 0;
       transcriptFailures.delete(video.videoId);
       if (requestGeneration !== generation) return;
 
@@ -200,24 +270,26 @@
       if (requestGeneration !== generation) return;
       if (!response?.ok) throw new Error(response?.error || "Transcript submission failed");
 
+      // The API now owns the transcript even when analysis remains queued.
+      transcriptNeededVideos.delete(video.videoId);
       const result = response.results[0];
       if (result?.status === "completed" && typeof result.isAi === "boolean") {
         saveClassification(video.videoId, result.isAi);
       } else if (result?.status === "failed") {
-        saveClassification(video.videoId, false);
+        markFailed(video.videoId);
       } else {
         analysisQueue.set(video.videoId, video);
         scheduleAnalysis(3_000);
       }
     } catch (error) {
+      const retryable = error?.retryable !== false;
       const failures = (transcriptFailures.get(video.videoId) ?? 0) + 1;
       transcriptFailures.set(video.videoId, failures);
-      console.warn(
-        `SlopShield transcript attempt ${failures} failed for ${video.videoId}:`,
-        error,
-      );
 
-      if (failures < 3 && requestGeneration === generation) {
+      if (!transcriptFetched && retryable) applyTranscriptBackoff();
+
+      if (retryable && failures < 3 && requestGeneration === generation) {
+        console.debug(`SlopShield will retry transcript ${video.videoId} (attempt ${failures})`);
         transcriptRetryIds.add(video.videoId);
         window.setTimeout(() => {
           if (requestGeneration !== generation || classificationByVideoId.has(video.videoId)) return;
@@ -225,10 +297,21 @@
           enqueueTranscript(video);
         }, 2_000 * failures);
       } else {
+        console.warn(`SlopShield could not fetch transcript ${video.videoId}; leaving it visible:`, error);
         transcriptFailures.delete(video.videoId);
-        saveClassification(video.videoId, false);
+        markFailed(video.videoId);
       }
     }
+  }
+
+  function applyTranscriptBackoff() {
+    transcriptFailureStreak += 1;
+    const exponentialDelay = Math.min(
+      TRANSCRIPT_BACKOFF_MAX_MS,
+      TRANSCRIPT_BACKOFF_BASE_MS * 2 ** (transcriptFailureStreak - 1),
+    );
+    const jitteredDelay = exponentialDelay * (0.8 + Math.random() * 0.4);
+    transcriptNextStartAt = Math.max(transcriptNextStartAt, Date.now() + jitteredDelay);
   }
 
   async function requestTranscript(videoId) {
@@ -260,13 +343,30 @@
     if (!pending) return;
     transcriptRequests.delete(event.data.requestId);
 
-    if (event.data.ok) pending.resolve(event.data);
-    else pending.reject(new Error(event.data.error || "YouTube transcript request failed"));
+    if (event.data.ok) {
+      pending.resolve(event.data);
+    } else {
+      const error = new Error(event.data.error || "YouTube transcript request failed");
+      error.retryable = event.data.retryable !== false;
+      pending.reject(error);
+    }
   }
 
   function saveClassification(videoId, isAi) {
+    transcriptNeededVideos.delete(videoId);
+    failedVideoIds.delete(videoId);
     classificationByVideoId.set(videoId, isAi);
     for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, isAi);
+  }
+
+  function markFailed(videoId) {
+    transcriptNeededVideos.delete(videoId);
+    classificationByVideoId.delete(videoId);
+    failedVideoIds.add(videoId);
+    for (const card of cardsByVideoId.get(videoId) ?? []) {
+      card.classList.remove(HIDDEN_CLASS);
+      setCardStatus(card, null);
+    }
   }
 
   function readVideo(card) {
@@ -288,10 +388,55 @@
   function addCard(videoId, card) {
     if (!cardsByVideoId.has(videoId)) cardsByVideoId.set(videoId, new Set());
     cardsByVideoId.get(videoId).add(card);
+    if (!observedCards.has(card)) {
+      observedCards.add(card);
+      viewportObserver.observe(card);
+    }
   }
 
   function applyClassification(card, isAi) {
-    card.classList.toggle(HIDDEN_CLASS, settings.enabled && !isShortsPage() && isAi);
+    const shouldHide = settings.enabled && !isShortsPage() && isAi;
+    card.classList.toggle(HIDDEN_CLASS, shouldHide);
+    setCardStatus(card, isAi ? (shouldHide ? null : "would-hide") : "verified");
+  }
+
+  function setCardStatus(card, status) {
+    const thumbnail = card.querySelector("ytd-thumbnail, yt-thumbnail-view-model, a#thumbnail");
+    if (!thumbnail) return;
+
+    let badge = [...thumbnail.children].find((child) => child.classList?.contains(STATUS_BADGE_CLASS));
+    if (!status) {
+      badge?.remove();
+      thumbnail.classList.remove("slopshield-thumbnail");
+      return;
+    }
+
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = STATUS_BADGE_CLASS;
+      thumbnail.append(badge);
+    }
+    thumbnail.classList.add("slopshield-thumbnail");
+    badge.dataset.status = status;
+    badge.textContent = status === "verified"
+      ? "✓ Verified"
+      : status === "would-hide"
+        ? "AI detected"
+        : "Checking…";
+  }
+
+  function clearUnknownCardStatuses() {
+    for (const card of document.querySelectorAll(CARD_SELECTOR)) {
+      const videoId = card.dataset.slopshieldVideoId;
+      if (!classificationByVideoId.has(videoId)) setCardStatus(card, null);
+    }
+  }
+
+  function clearAllCardStatuses() {
+    for (const badge of document.querySelectorAll(`.${STATUS_BADGE_CLASS}`)) badge.remove();
+    for (const thumbnail of document.querySelectorAll(".slopshield-thumbnail")) {
+      thumbnail.classList.remove("slopshield-thumbnail");
+    }
   }
 
   function reapplyKnownClassifications() {
