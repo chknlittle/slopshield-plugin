@@ -35,7 +35,12 @@ async function analyzeVideos(videos) {
   const response = await fetch(`${API_BASE_URL}/v1/analyses`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ urls: batch.map((video) => video.url) }),
+    body: JSON.stringify({
+      videos: batch.map((video) => ({
+        url: video.url,
+        ...(typeof video.transcript === "string" ? { transcript: video.transcript } : {}),
+      })),
+    }),
   });
 
   if (!response.ok) throw new Error(`SlopShield API returned HTTP ${response.status}`);
@@ -50,6 +55,7 @@ async function analyzeVideos(videos) {
     results: payload.analyses.map((analysis, index) => ({
       videoId: batch[index]?.videoId,
       status: analysis.status,
+      needsTranscript: analysis.needs_transcript === true,
       isAi: analysis.is_ai,
       error: analysis.error,
     })),

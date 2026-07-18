@@ -9,16 +9,27 @@
     "yt-lockup-view-model",
   ].join(",");
   const HIDDEN_CLASS = "slopshield-hidden";
+  const TRANSCRIPT_REQUEST = "SLOPSHIELD_TRANSCRIPT_REQUEST";
+  const TRANSCRIPT_RESPONSE = "SLOPSHIELD_TRANSCRIPT_RESPONSE";
+  const TRANSCRIPT_CONCURRENCY = 2;
 
   let settings = { ...DEFAULT_SETTINGS };
   let scanTimer = null;
   let analysisTimer = null;
   let generation = 0;
+  let transcriptInFlight = 0;
   const cardsByVideoId = new Map();
   const analysisQueue = new Map();
+  const transcriptQueue = new Map();
   const pendingIds = new Set();
+  const transcriptPendingIds = new Set();
+  const transcriptRetryIds = new Set();
+  const transcriptFailures = new Map();
   const classificationByVideoId = new Map();
+  const transcriptRequests = new Map();
+  const bridgeReady = Promise.resolve();
 
+  window.addEventListener("message", receiveTranscriptResponse);
   void initialize();
 
   async function initialize() {
@@ -59,7 +70,11 @@
     scanTimer = null;
     analysisTimer = null;
     analysisQueue.clear();
+    transcriptQueue.clear();
     pendingIds.clear();
+    transcriptPendingIds.clear();
+    transcriptRetryIds.clear();
+    transcriptFailures.clear();
     classificationByVideoId.clear();
     cardsByVideoId.clear();
     revealAllCards();
@@ -92,7 +107,11 @@
 
       if (classificationByVideoId.has(video.videoId)) {
         applyClassification(card, classificationByVideoId.get(video.videoId));
-      } else if (!pendingIds.has(video.videoId)) {
+      } else if (
+        !pendingIds.has(video.videoId) &&
+        !transcriptPendingIds.has(video.videoId) &&
+        !transcriptRetryIds.has(video.videoId)
+      ) {
         analysisQueue.set(video.videoId, video);
       }
     }
@@ -122,22 +141,21 @@
     try {
       const response = await extensionApi.runtime.sendMessage({ type: "ANALYZE_VIDEOS", videos: batch });
       if (requestGeneration !== generation) return;
-      if (!response?.ok) throw new Error(response?.error || "Analysis failed");
+      if (!response?.ok) throw new Error(response?.error || "Analysis lookup failed");
 
       for (let index = 0; index < batch.length; index += 1) {
         const video = batch[index];
         const result = response.results[index];
         if (result?.status === "completed" && typeof result.isAi === "boolean") {
           saveClassification(video.videoId, result.isAi);
-          continue;
-        }
-        if (result?.status === "failed") {
+        } else if (result?.status === "missing" && result.needsTranscript === true) {
+          enqueueTranscript(video);
+        } else if (result?.status === "failed") {
           saveClassification(video.videoId, false);
-          continue;
+        } else {
+          analysisQueue.set(video.videoId, video);
+          retryDelay = 3_000;
         }
-
-        analysisQueue.set(video.videoId, video);
-        retryDelay = 2_000;
       }
 
       await extensionApi.storage.local.set({ lastApiError: null });
@@ -145,13 +163,111 @@
       updateBlockedCount();
     } catch (error) {
       await extensionApi.storage.local.set({ lastApiError: error.message });
-      showPageNotice("SlopShield cannot reach the API at localhost:3000");
+      showPageNotice("SlopShield cannot reach its API");
       for (const video of batch) analysisQueue.set(video.videoId, video);
-      retryDelay = 4_000;
+      retryDelay = 5_000;
     } finally {
       for (const video of batch) pendingIds.delete(video.videoId);
       if (analysisQueue.size > 0) scheduleAnalysis(retryDelay ?? 220);
     }
+  }
+
+  function enqueueTranscript(video) {
+    if (classificationByVideoId.has(video.videoId) || transcriptPendingIds.has(video.videoId)) return;
+    transcriptQueue.set(video.videoId, video);
+    transcriptPendingIds.add(video.videoId);
+    pumpTranscriptQueue();
+  }
+
+  function pumpTranscriptQueue() {
+    while (settings.enabled && transcriptInFlight < TRANSCRIPT_CONCURRENCY && transcriptQueue.size > 0) {
+      const [videoId, video] = transcriptQueue.entries().next().value;
+      transcriptQueue.delete(videoId);
+      transcriptInFlight += 1;
+      void fetchAndSubmitTranscript(video, generation).finally(() => {
+        transcriptInFlight -= 1;
+        transcriptPendingIds.delete(videoId);
+        pumpTranscriptQueue();
+      });
+    }
+  }
+
+  async function fetchAndSubmitTranscript(video, requestGeneration) {
+    try {
+      const transcript = await requestTranscript(video.videoId);
+      transcriptFailures.delete(video.videoId);
+      if (requestGeneration !== generation) return;
+
+      const response = await extensionApi.runtime.sendMessage({
+        type: "ANALYZE_VIDEOS",
+        videos: [{ ...video, transcript: transcript.transcript }],
+      });
+      if (requestGeneration !== generation) return;
+      if (!response?.ok) throw new Error(response?.error || "Transcript submission failed");
+
+      const result = response.results[0];
+      if (result?.status === "completed" && typeof result.isAi === "boolean") {
+        saveClassification(video.videoId, result.isAi);
+      } else if (result?.status === "failed") {
+        saveClassification(video.videoId, false);
+      } else {
+        analysisQueue.set(video.videoId, video);
+        scheduleAnalysis(3_000);
+      }
+    } catch (error) {
+      const failures = (transcriptFailures.get(video.videoId) ?? 0) + 1;
+      transcriptFailures.set(video.videoId, failures);
+      console.warn(
+        `SlopShield transcript attempt ${failures} failed for ${video.videoId}:`,
+        error,
+      );
+
+      if (failures < 3 && requestGeneration === generation) {
+        transcriptRetryIds.add(video.videoId);
+        window.setTimeout(() => {
+          if (requestGeneration !== generation || classificationByVideoId.has(video.videoId)) return;
+          transcriptRetryIds.delete(video.videoId);
+          enqueueTranscript(video);
+        }, 2_000 * failures);
+      } else {
+        transcriptFailures.delete(video.videoId);
+        saveClassification(video.videoId, false);
+      }
+    }
+  }
+
+  async function requestTranscript(videoId) {
+    await bridgeReady;
+    const requestId = crypto.randomUUID();
+
+    return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        transcriptRequests.delete(requestId);
+        reject(new Error("YouTube transcript request timed out"));
+      }, 30_000);
+
+      transcriptRequests.set(requestId, {
+        resolve: (result) => {
+          window.clearTimeout(timeout);
+          resolve(result);
+        },
+        reject: (error) => {
+          window.clearTimeout(timeout);
+          reject(error);
+        },
+      });
+      window.postMessage({ type: TRANSCRIPT_REQUEST, requestId, videoId }, "*");
+    });
+  }
+
+  function receiveTranscriptResponse(event) {
+    if (event.source !== window || event.data?.type !== TRANSCRIPT_RESPONSE) return;
+    const pending = transcriptRequests.get(event.data.requestId);
+    if (!pending) return;
+    transcriptRequests.delete(event.data.requestId);
+
+    if (event.data.ok) pending.resolve(event.data);
+    else pending.reject(new Error(event.data.error || "YouTube transcript request failed"));
   }
 
   function saveClassification(videoId, isAi) {

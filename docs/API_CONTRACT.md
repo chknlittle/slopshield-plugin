@@ -1,56 +1,66 @@
 # SlopShield API contract used by the extension
 
-The extension talks directly to [`slopshield-api`](https://github.com/chknlittle/slopshield-api).
+The extension talks directly to [`slopshield-api`](https://github.com/chknlittle/slopshield-api) in two phases.
 
-## Submit and read analyses
+## 1. Look up visible videos
 
 ```http
 POST /v1/analyses
 Content-Type: application/json
 
 {
-  "urls": [
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+  "videos": [
+    { "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ" }
   ]
 }
 ```
 
-The response preserves input order:
+Each response entry is one of:
 
-```json
+- `completed`: apply the cached `is_ai` result immediately.
+- `queued` or `running`: leave visible and poll later.
+- `missing` with `needs_transcript: true`: fetch captions in the browser.
+- `failed`: leave visible and stop retrying automatically.
+
+If the API has a stored transcript but no score for the active engine version, it queues analysis itself and returns `queued`; the browser does not fetch the transcript again.
+
+## 2. Submit browser-fetched transcripts
+
+For missing videos, Firefox obtains the transcript through the user's YouTube session and submits:
+
+```http
+POST /v1/analyses
+Content-Type: application/json
+
 {
-  "engine_version": "v1",
-  "summary": {
-    "total": 1,
-    "valid": 1,
-    "invalid": 0,
-    "queued": 0,
-    "running": 0,
-    "completed": 1,
-    "failed": 0
-  },
-  "analyses": [
+  "videos": [
     {
-      "input_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-      "video_id": "dQw4w9WgXcQ",
-      "engine_version": "v1",
-      "status": "completed",
-      "cached": true,
-      "is_ai": false,
-      "result": {},
-      "error": null
+      "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "transcript": "[0.00 -> 3.20] Timestamped caption text"
     }
   ]
 }
 ```
 
-Missing analyses return immediately as `queued`. The extension submits queued or running videos again later to read their current state.
+The API persists the transcript and returns `queued`. Subsequent polls omit the transcript.
 
-Only `status` and `is_ai` control filtering:
+A response entry has this shape:
 
-- Completed and `is_ai: true` means hide.
-- Completed and `is_ai: false` means show.
-- Every other state means show.
+```json
+{
+  "input_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  "video_id": "dQw4w9WgXcQ",
+  "engine_version": "v1",
+  "status": "completed",
+  "cached": true,
+  "needs_transcript": false,
+  "is_ai": false,
+  "result": {},
+  "error": null
+}
+```
+
+Only a completed `is_ai: true` entry hides a card. All failures remain visible.
 
 ## Health
 

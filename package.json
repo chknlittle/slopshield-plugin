@@ -1,0 +1,14 @@
+{
+  "name": "slopshield-plugin",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:webpo": "node scripts/build-webpo.mjs",
+    "build:firefox": "node scripts/build-firefox.mjs"
+  },
+  "devDependencies": {
+    "bgutils-js": "4.0.0",
+    "esbuild": "0.25.6"
+  }
+}

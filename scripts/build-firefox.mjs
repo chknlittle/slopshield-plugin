@@ -1,3 +1,5 @@
+import "./build-webpo.mjs";
+
 import { copyFile, cp, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

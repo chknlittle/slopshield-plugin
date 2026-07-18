@@ -1,6 +1,6 @@
 # SlopShield browser extension
 
-SlopShield hides videos that the SlopShield API has classified as AI-generated. It scans the normal YouTube cards already visible in the browser; transcript retrieval and model inference stay in the backend.
+SlopShield hides videos that the SlopShield API has classified as AI-generated. It scans normal YouTube cards, reuses cached scores immediately, and fetches missing transcripts through the user's active YouTube browser session. Model inference stays in the backend.
 
 This fork uses the real [`slopshield-api`](https://github.com/chknlittle/slopshield-api). The old mock scores, strictness slider, and preview mode have been removed. Filtering is simply on or off.
 
@@ -13,10 +13,11 @@ This fork uses the real [`slopshield-api`](https://github.com/chknlittle/slopshi
 
 ## Install temporarily in Firefox
 
-Firefox uses a background script rather than Chrome's Manifest V3 service worker, so it needs its own manifest. Build the Firefox directory with Node.js 18 or newer:
+Firefox uses a background script rather than Chrome's Manifest V3 service worker, so it needs its own manifest. Install build dependencies and build the Firefox directory with Node.js 18 or newer:
 
 ```bash
-node scripts/build-firefox.mjs
+npm install
+npm run build:firefox
 ```
 
 Then:
@@ -32,12 +33,15 @@ The popup reports API/engine health and the number of AI videos hidden on the cu
 
 ## Behavior
 
-The extension sends visible video URLs to `POST /v1/analyses` in batches of up to 50.
+The extension first sends visible video URLs to `POST /v1/analyses` in batches of up to 50.
 
 - `completed` with `is_ai: true`: hide the video card.
 - `completed` with `is_ai: false`: leave it visible.
 - `queued` or `running`: leave it visible and check again later.
+- `missing` with `needs_transcript: true`: fetch captions in Firefox and submit them.
 - `failed` or invalid: leave it visible.
+
+For missing videos, the page bridge runs YouTube's BotGuard challenge once, reuses its WebPO minter, mints a content-bound token per video, and fetches timestamped captions through the user's IP/session. At most two transcript jobs run concurrently. No hidden tabs or video navigation are used.
 
 Results are cached by the backend. The extension never hides a video because of an engine, transcript, or network failure.
 
@@ -50,7 +54,9 @@ manifest.json            Chrome Manifest V3 configuration
 manifest.firefox.json    Firefox Manifest V3 configuration
 scripts/build-firefox.mjs  Creates the loadable Firefox directory
 src/background.js        SlopShield API requests and health checks
-src/content.js           YouTube card discovery, queueing, and filtering
+src/content.js           Card discovery, two-phase queueing, and filtering
+src/webpo-page-entry.js   Browser transcript/WebPO source
+src/webpo-page.js         Generated page-context browser bundle
 src/content.css          Hidden-card and API-offline styles
 popup/                   On/off switch, health, and hidden count
 ```
