@@ -37,7 +37,7 @@
   const transcriptFailures = new Map();
   const transcriptNeededVideos = new Map();
   const classificationByVideoId = new Map();
-  const failedVideoIds = new Set();
+  const failedVideoIds = new Map();
   const viewportDeferredIds = new Set();
   const transcriptRequests = new Map();
   const observedCards = new WeakSet();
@@ -131,11 +131,11 @@
       if (classificationByVideoId.has(video.videoId)) {
         applyClassification(card, classificationByVideoId.get(video.videoId));
       } else if (failedVideoIds.has(video.videoId)) {
-        setCardStatus(card, null);
+        setCardStatus(card, failedVideoIds.get(video.videoId));
       } else {
         setCardStatus(card, "processing");
         if (!video.channelId) {
-          if (video.channelUnavailable) setCardStatus(card, null);
+          if (video.channelUnavailable) setCardStatus(card, "unavailable");
           continue;
         }
         if (transcriptNeededVideos.has(video.videoId)) {
@@ -200,7 +200,7 @@
             viewportDeferredIds.add(video.videoId);
           }
         } else if (result?.status === "failed") {
-          markFailed(video.videoId);
+          markFailed(video.videoId, "check-failed");
         } else if (
           (result?.status === "queued" || result?.status === "running") &&
           !isVideoInViewport(video.videoId)
@@ -329,7 +329,7 @@
       if (result?.status === "completed" && typeof result.isAi === "boolean") {
         saveClassification(video.videoId, result.isAi, result.classificationSource);
       } else if (result?.status === "failed") {
-        markFailed(video.videoId);
+        markFailed(video.videoId, "check-failed");
       } else {
         analysisQueue.set(video.videoId, video);
         scheduleAnalysis(3_000);
@@ -352,7 +352,7 @@
       } else {
         console.warn(`SlopShield could not fetch transcript ${video.videoId}; leaving it visible:`, error);
         transcriptFailures.delete(video.videoId);
-        markFailed(video.videoId);
+        markFailed(video.videoId, retryable ? "check-failed" : "unavailable");
       }
     }
   }
@@ -419,14 +419,14 @@
     for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, classification);
   }
 
-  function markFailed(videoId) {
+  function markFailed(videoId, status = "check-failed") {
     transcriptNeededVideos.delete(videoId);
     viewportDeferredIds.delete(videoId);
     classificationByVideoId.delete(videoId);
-    failedVideoIds.add(videoId);
+    failedVideoIds.set(videoId, status);
     for (const card of cardsByVideoId.get(videoId) ?? []) {
       card.classList.remove(HIDDEN_CLASS);
-      setCardStatus(card, null);
+      setCardStatus(card, status);
     }
   }
 
@@ -532,13 +532,24 @@
           ? "AI channel"
           : status === "would-hide"
             ? "AI detected"
-            : "Checking…";
+            : status === "unavailable"
+              ? "Unavailable"
+              : status === "check-failed"
+                ? "Check failed"
+                : "Checking…";
   }
 
   function clearUnknownCardStatuses() {
     for (const card of document.querySelectorAll(CARD_SELECTOR)) {
       const videoId = card.dataset.slopshieldVideoId;
-      if (!classificationByVideoId.has(videoId)) setCardStatus(card, null);
+      if (classificationByVideoId.has(videoId)) continue;
+      if (failedVideoIds.has(videoId)) {
+        setCardStatus(card, failedVideoIds.get(videoId));
+      } else if (videoById.get(videoId)?.channelUnavailable) {
+        setCardStatus(card, "unavailable");
+      } else {
+        setCardStatus(card, null);
+      }
     }
   }
 

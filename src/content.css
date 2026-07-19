@@ -42,9 +42,15 @@
 }
 
 .slopshield-status-badge[data-status="would-hide"],
-.slopshield-status-badge[data-status="would-hide-channel"] {
+.slopshield-status-badge[data-status="would-hide-channel"],
+.slopshield-status-badge[data-status="check-failed"] {
   border-color: rgba(255, 112, 112, 0.75);
   background: rgba(145, 35, 35, 0.94);
+}
+
+.slopshield-status-badge[data-status="unavailable"] {
+  border-color: rgba(190, 195, 205, 0.55);
+  background: rgba(70, 74, 82, 0.92);
 }
 
 .slopshield-page-notice {

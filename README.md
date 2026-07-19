@@ -43,7 +43,7 @@ The extension extracts each video's immutable `UC…` channel ID from YouTube re
 
 For missing videos that enter the viewport, the page bridge runs YouTube's BotGuard challenge once, reuses its WebPO minter, mints a content-bound token per video, and fetches timestamped captions through the user's IP/session. Transcript jobs run one at a time with at least 1 second between starts. Transient YouTube/network failures trigger a shared exponential cooldown (30 seconds up to 5 minutes) so one rate limit cannot cause a retry storm. No hidden tabs or video navigation are used.
 
-Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending, `✓ Verified` for a directly analyzed non-AI video, and `✓ Channel verified` for a non-AI verdict inherited from the channel's evidence video. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals direct AI results as `AI detected` and inherited results as `AI channel`, making the disabled state useful as a preview. Failed or unavailable analyses receive no badge and remain visible.
+Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending, `✓ Verified` for a directly analyzed non-AI video, and `✓ Channel verified` for a non-AI verdict inherited from the channel's evidence video. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals direct AI results as `AI detected` and inherited results as `AI channel`, making the disabled state useful as a preview. Failures remain visible with a `Check failed` badge. Videos without an immutable channel ID or usable transcript remain visible with an `Unavailable` badge.
 
 YouTube Shorts and Shorts shelves are intentionally ignored.
 
