@@ -65,18 +65,115 @@ if (!globalThis.__slopShieldTranscriptBridge) {
   function annotateChannelIds() {
     let changed = false;
     for (const card of document.querySelectorAll(CARD_SELECTOR)) {
-      if (CHANNEL_ID.test(card.dataset.slopshieldChannelId ?? "")) continue;
-      const channelId = findChannelIdInRenderer(card);
-      if (!channelId) continue;
-      card.dataset.slopshieldChannelId = channelId;
-      changed = true;
+      const videoId = videoIdFromCard(card);
+      if (!videoId) continue;
+      const annotationMatches = card.dataset.slopshieldChannelVideoId === videoId;
+      if (
+        annotationMatches && (
+          CHANNEL_ID.test(card.dataset.slopshieldChannelId ?? "") ||
+          card.dataset.slopshieldChannelUnavailable === "true"
+        )
+      ) continue;
+      delete card.dataset.slopshieldChannelId;
+      delete card.dataset.slopshieldChannelUnavailable;
+      delete card.dataset.slopshieldChannelVideoId;
+
+      const resolution = card.closest("ytd-watch-next-secondary-results-renderer, #secondary")
+        ? resolveWatchRecommendation(card, videoId)
+        : { channelId: findChannelIdInRenderer(card), resolved: false };
+      if (resolution.channelId) {
+        card.dataset.slopshieldChannelId = resolution.channelId;
+        card.dataset.slopshieldChannelVideoId = videoId;
+        changed = true;
+      } else if (resolution.resolved) {
+        card.dataset.slopshieldChannelUnavailable = "true";
+        card.dataset.slopshieldChannelVideoId = videoId;
+        changed = true;
+      }
     }
     if (changed) window.postMessage({ type: CHANNELS_UPDATED_TYPE }, "*");
   }
 
+  function resolveWatchRecommendation(card, videoId) {
+    const root = card.closest("ytd-item-section-renderer")?.data;
+    if (!root) return { channelId: null, resolved: false };
+
+    const channelIds = new Set();
+    const seen = new WeakSet();
+    const stack = [root];
+    let inspected = 0;
+    let foundVideoNode = false;
+    while (stack.length && inspected < 250_000) {
+      const value = stack.pop();
+      inspected += 1;
+      if (value === null || typeof value !== "object" || seen.has(value)) continue;
+      seen.add(value);
+
+      const nodeVideoId = typeof value.videoId === "string"
+        ? value.videoId
+        : typeof value.contentId === "string" && VIDEO_ID.test(value.contentId)
+          ? value.contentId
+          : null;
+      if (nodeVideoId === videoId) {
+        foundVideoNode = true;
+        for (const channelId of channelIdsInValue(value, 12)) channelIds.add(channelId);
+      }
+
+      let children;
+      try {
+        children = Object.values(value);
+      } catch {
+        continue;
+      }
+      for (const child of children) {
+        if (child && typeof child === "object") stack.push(child);
+      }
+    }
+
+    return {
+      channelId: channelIds.size === 1 ? channelIds.values().next().value : null,
+      resolved: foundVideoNode,
+    };
+  }
+
+  function videoIdFromCard(card) {
+    const anchor = card.querySelector('a[href^="/watch?v="], a[href*="youtube.com/watch?v="]');
+    if (!anchor) return null;
+    try {
+      return new URL(anchor.href, location.origin).searchParams.get("v");
+    } catch {
+      return null;
+    }
+  }
+
+  function channelIdsInValue(root, maxDepth) {
+    const found = new Set();
+    const seen = new WeakSet();
+    const stack = [{ value: root, depth: 0 }];
+    let inspected = 0;
+    while (stack.length && inspected < 30_000) {
+      const { value, depth } = stack.pop();
+      inspected += 1;
+      if (typeof value === "string") {
+        if (CHANNEL_ID.test(value)) found.add(value);
+        continue;
+      }
+      if (value === null || typeof value !== "object" || depth >= maxDepth || seen.has(value)) continue;
+      seen.add(value);
+      let children;
+      try {
+        children = Object.values(value);
+      } catch {
+        continue;
+      }
+      for (const child of children) stack.push({ value: child, depth: depth + 1 });
+    }
+    return found;
+  }
+
   function findChannelIdInRenderer(card) {
     const seen = new WeakSet();
-    const stack = [card.data, card.__data, card.__dataHost?.data];
+    const stack = [card.data];
     let inspected = 0;
     while (stack.length && inspected < 20_000) {
       const value = stack.pop();

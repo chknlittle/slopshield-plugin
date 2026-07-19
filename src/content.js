@@ -41,7 +41,6 @@
   const viewportDeferredIds = new Set();
   const transcriptRequests = new Map();
   const observedCards = new WeakSet();
-  const channelLookupByCard = new WeakMap();
   const viewportObserver = new IntersectionObserver(handleViewportChanges, { threshold: 0.01 });
 
   window.addEventListener("message", receivePageMessage);
@@ -135,7 +134,10 @@
         setCardStatus(card, null);
       } else {
         setCardStatus(card, "processing");
-        if (!video.channelId) continue;
+        if (!video.channelId) {
+          if (video.channelUnavailable) setCardStatus(card, null);
+          continue;
+        }
         if (transcriptNeededVideos.has(video.videoId)) {
           if (isCardInViewport(card)) enqueueTranscript(video);
         } else if (viewportDeferredIds.has(video.videoId)) {
@@ -438,9 +440,12 @@
     const videoId = url.searchParams.get("v");
     if (!videoId) return null;
 
+    const known = videoById.get(videoId);
+    const annotation = readChannelAnnotation(card, videoId);
     return {
       videoId,
-      channelId: videoById.get(videoId)?.channelId ?? findChannelId(card, videoId),
+      channelId: known?.channelId ?? annotation.channelId,
+      channelUnavailable: known?.channelId ? false : known?.channelUnavailable ?? annotation.unavailable,
       url: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
     };
   }
@@ -452,9 +457,14 @@
       return discovered;
     }
     if (!existing.channelId && discovered.channelId) {
-      const enriched = { ...existing, channelId: discovered.channelId };
+      const enriched = { ...existing, channelId: discovered.channelId, channelUnavailable: false };
       videoById.set(discovered.videoId, enriched);
       return enriched;
+    }
+    if (!existing.channelId && !existing.channelUnavailable && discovered.channelUnavailable) {
+      const unavailable = { ...existing, channelUnavailable: true };
+      videoById.set(discovered.videoId, unavailable);
+      return unavailable;
     }
     if (existing.channelId && discovered.channelId && existing.channelId !== discovered.channelId) {
       console.warn(`SlopShield found conflicting channel IDs for ${discovered.videoId}`);
@@ -462,53 +472,17 @@
     return existing;
   }
 
-  function findChannelId(card, videoId) {
+  function readChannelAnnotation(card, videoId) {
     const outer = card.closest("ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer");
-    const annotated = card.dataset.slopshieldChannelId ?? outer?.dataset.slopshieldChannelId;
-    if (CHANNEL_ID.test(annotated ?? "")) return annotated;
-
-    const cached = channelLookupByCard.get(card);
-    if (
-      cached?.videoId === videoId &&
-      (cached.channelId || Date.now() - cached.checkedAt < 5_000)
-    ) {
-      return cached.channelId ?? null;
-    }
-
-    const roots = new Set([
-      card.data,
-      card.__data,
-      card.__dataHost?.data,
-      outer?.data,
-      outer?.__data,
-      outer?.__dataHost?.data,
-    ]);
-    const seen = new WeakSet();
-    const stack = [...roots].map((value) => ({ value, depth: 0 }));
-    let inspected = 0;
-
-    while (stack.length && inspected < 20_000) {
-      const { value, depth } = stack.pop();
-      inspected += 1;
-      if (typeof value === "string") {
-        if (CHANNEL_ID.test(value)) {
-          channelLookupByCard.set(card, { videoId, channelId: value, checkedAt: Date.now() });
-          return value;
-        }
-        continue;
+    for (const element of [card, outer]) {
+      if (!element || element.dataset.slopshieldChannelVideoId !== videoId) continue;
+      const channelId = element.dataset.slopshieldChannelId;
+      if (CHANNEL_ID.test(channelId ?? "")) return { channelId, unavailable: false };
+      if (element.dataset.slopshieldChannelUnavailable === "true") {
+        return { channelId: null, unavailable: true };
       }
-      if (value === null || typeof value !== "object" || depth >= 12 || seen.has(value)) continue;
-      seen.add(value);
-      let children;
-      try {
-        children = Object.values(value);
-      } catch {
-        continue;
-      }
-      for (const child of children) stack.push({ value: child, depth: depth + 1 });
     }
-    channelLookupByCard.set(card, { videoId, channelId: null, checkedAt: Date.now() });
-    return null;
+    return { channelId: null, unavailable: false };
   }
 
   function addCard(videoId, card) {
