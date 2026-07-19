@@ -2,7 +2,7 @@
 
 SlopShield hides videos that the SlopShield API has classified as AI-generated. It scans normal YouTube cards, reuses cached scores immediately, and fetches missing transcripts through the user's active YouTube browser session. Model inference stays in the backend.
 
-This fork uses the real [`slopshield-api`](https://github.com/chknlittle/slopshield-api). The old mock scores, strictness slider, and preview mode have been removed. Filtering is simply on or off.
+This fork uses the real [`slopshield-api`](https://github.com/chknlittle/slopshield-api). The old mock scores and strictness slider have been removed. Filtering is simply on or off; switching it off reveals already-classified AI cards with provenance badges.
 
 ## Install in Chrome
 
@@ -33,7 +33,7 @@ The popup reports API/engine health and the number of AI videos hidden on the cu
 
 ## Behavior
 
-The extension first sends discovered video URLs to `POST /v1/analyses` in batches of up to 50. Cached classifications are applied immediately, but an uncached video's transcript is fetched only after one of its cards enters the viewport.
+The extension extracts each video's immutable `UC…` channel ID from YouTube renderer data (with no handle/name fallback), then sends discovered videos to `POST /v1/analyses` in batches of up to 50. Cached video or channel classifications are applied immediately. For a new channel, the API selects one evidence video; its transcript is fetched only after its card enters the viewport. Other videos from that channel wait and inherit the evidence verdict without fetching transcripts.
 
 - `completed` with `is_ai: true`: hide the video card.
 - `completed` with `is_ai: false`: leave it visible.
@@ -43,7 +43,7 @@ The extension first sends discovered video URLs to `POST /v1/analyses` in batche
 
 For missing videos that enter the viewport, the page bridge runs YouTube's BotGuard challenge once, reuses its WebPO minter, mints a content-bound token per video, and fetches timestamped captions through the user's IP/session. Transcript jobs run one at a time with at least 1 second between starts. Transient YouTube/network failures trigger a shared exponential cooldown (30 seconds up to 5 minutes) so one rate limit cannot cause a retry storm. No hidden tabs or video navigation are used.
 
-Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending and `✓ Verified` when a completed analysis says the video is not AI-generated. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals already-classified AI cards with an `AI detected` badge, making the disabled state useful as a preview. Failed or unavailable analyses receive no badge and remain visible.
+Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending, `✓ Verified` for a directly analyzed non-AI video, and `✓ Channel verified` for a non-AI verdict inherited from the channel's evidence video. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals direct AI results as `AI detected` and inherited results as `AI channel`, making the disabled state useful as a preview. Failed or unavailable analyses receive no badge and remain visible.
 
 YouTube Shorts and Shorts shelves are intentionally ignored.
 

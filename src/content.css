@@ -31,12 +31,18 @@
   background: rgba(15, 105, 65, 0.92);
 }
 
+.slopshield-status-badge[data-status="verified-channel"] {
+  border-color: rgba(92, 210, 206, 0.7);
+  background: rgba(15, 91, 96, 0.94);
+}
+
 .slopshield-status-badge[data-status="processing"] {
   border-color: rgba(255, 196, 87, 0.65);
   background: rgba(115, 75, 10, 0.92);
 }
 
-.slopshield-status-badge[data-status="would-hide"] {
+.slopshield-status-badge[data-status="would-hide"],
+.slopshield-status-badge[data-status="would-hide-channel"] {
   border-color: rgba(255, 112, 112, 0.75);
   background: rgba(145, 35, 35, 0.94);
 }

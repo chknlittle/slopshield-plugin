@@ -38,6 +38,8 @@ async function analyzeVideos(videos) {
     body: JSON.stringify({
       videos: batch.map((video) => ({
         url: video.url,
+        channel_id: video.channelId,
+        evidence_candidate: video.evidenceCandidate === true,
         ...(typeof video.transcript === "string" ? { transcript: video.transcript } : {}),
       })),
     }),
@@ -52,11 +54,11 @@ async function analyzeVideos(videos) {
 
   return {
     ok: true,
-    results: payload.analyses.map((analysis, index) => ({
-      videoId: batch[index]?.videoId,
+    results: payload.analyses.map((analysis) => ({
       status: analysis.status,
       needsTranscript: analysis.needs_transcript === true,
       isAi: analysis.is_ai,
+      classificationSource: analysis.classification_source,
     })),
   };
 }

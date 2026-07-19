@@ -9,6 +9,7 @@
     "yt-lockup-view-model",
   ].join(",");
   const HIDDEN_CLASS = "slopshield-hidden";
+  const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
   const STATUS_BADGE_CLASS = "slopshield-status-badge";
   const TRANSCRIPT_REQUEST = "SLOPSHIELD_TRANSCRIPT_REQUEST";
   const TRANSCRIPT_RESPONSE = "SLOPSHIELD_TRANSCRIPT_RESPONSE";
@@ -26,6 +27,7 @@
   let transcriptNextStartAt = 0;
   let transcriptFailureStreak = 0;
   const cardsByVideoId = new Map();
+  const videoById = new Map();
   const analysisQueue = new Map();
   const transcriptQueue = new Map();
   const pendingIds = new Set();
@@ -35,8 +37,10 @@
   const transcriptNeededVideos = new Map();
   const classificationByVideoId = new Map();
   const failedVideoIds = new Set();
+  const viewportDeferredIds = new Set();
   const transcriptRequests = new Map();
   const observedCards = new WeakSet();
+  const channelLookupByCard = new WeakMap();
   const viewportObserver = new IntersectionObserver(handleViewportChanges, { threshold: 0.01 });
 
   window.addEventListener("message", receiveTranscriptResponse);
@@ -91,7 +95,9 @@
     transcriptNeededVideos.clear();
     classificationByVideoId.clear();
     failedVideoIds.clear();
+    viewportDeferredIds.clear();
     cardsByVideoId.clear();
+    videoById.clear();
     revealAllCards();
     clearAllCardStatuses();
     scheduleScan(0);
@@ -109,8 +115,9 @@
     if (!settings.enabled || isShortsPage()) return;
 
     for (const card of document.querySelectorAll(CARD_SELECTOR)) {
-      const video = readVideo(card);
-      if (video === null) continue;
+      const discoveredVideo = readVideo(card);
+      if (discoveredVideo === null) continue;
+      const video = rememberVideo(discoveredVideo);
 
       const previousId = card.dataset.slopshieldVideoId;
       if (previousId && previousId !== video.videoId) {
@@ -127,8 +134,14 @@
         setCardStatus(card, null);
       } else {
         setCardStatus(card, "processing");
+        if (!video.channelId) continue;
         if (transcriptNeededVideos.has(video.videoId)) {
           if (isCardInViewport(card)) enqueueTranscript(video);
+        } else if (viewportDeferredIds.has(video.videoId)) {
+          if (isCardInViewport(card)) {
+            viewportDeferredIds.delete(video.videoId);
+            analysisQueue.set(video.videoId, video);
+          }
         } else if (
           !pendingIds.has(video.videoId) &&
           !transcriptPendingIds.has(video.videoId) &&
@@ -154,7 +167,10 @@
     if (!settings.enabled || analysisQueue.size === 0) return;
 
     const requestGeneration = generation;
-    const batch = [...analysisQueue.values()].slice(0, 50);
+    const batch = [...analysisQueue.values()]
+      .sort((left, right) => Number(isVideoInViewport(right.videoId)) - Number(isVideoInViewport(left.videoId)))
+      .slice(0, 50)
+      .map((video) => ({ ...video, evidenceCandidate: isVideoInViewport(video.videoId) }));
     for (const video of batch) {
       analysisQueue.delete(video.videoId);
       pendingIds.add(video.videoId);
@@ -170,11 +186,23 @@
         const video = batch[index];
         const result = response.results[index];
         if (result?.status === "completed" && typeof result.isAi === "boolean") {
-          saveClassification(video.videoId, result.isAi);
+          saveClassification(video.videoId, result.isAi, result.classificationSource);
         } else if (result?.status === "missing" && result.needsTranscript === true) {
           markTranscriptNeeded(video);
+        } else if (result?.status === "failed" && result.classificationSource === "channel") {
+          if (isVideoInViewport(video.videoId)) {
+            analysisQueue.set(video.videoId, video);
+            retryDelay = 10_000;
+          } else {
+            viewportDeferredIds.add(video.videoId);
+          }
         } else if (result?.status === "failed") {
           markFailed(video.videoId);
+        } else if (
+          (result?.status === "queued" || result?.status === "running") &&
+          !isVideoInViewport(video.videoId)
+        ) {
+          viewportDeferredIds.add(video.videoId);
         } else {
           analysisQueue.set(video.videoId, video);
           retryDelay = 3_000;
@@ -205,14 +233,36 @@
   function handleViewportChanges(entries) {
     for (const entry of entries) {
       if (!entry.isIntersecting) continue;
-      const video = transcriptNeededVideos.get(entry.target.dataset.slopshieldVideoId);
-      if (video) enqueueTranscript(video);
+      const videoId = entry.target.dataset.slopshieldVideoId;
+      const transcriptVideo = transcriptNeededVideos.get(videoId);
+      if (transcriptVideo) {
+        enqueueTranscript(transcriptVideo);
+        continue;
+      }
+      const video = videoById.get(videoId);
+      if (
+        video?.channelId &&
+        !classificationByVideoId.has(videoId) &&
+        !failedVideoIds.has(videoId) &&
+        !pendingIds.has(videoId)
+      ) {
+        viewportDeferredIds.delete(videoId);
+        analysisQueue.set(videoId, video);
+        scheduleAnalysis(0);
+      }
     }
   }
 
   function isCardInViewport(card) {
     const rect = card.getBoundingClientRect();
     return rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth;
+  }
+
+  function isVideoInViewport(videoId) {
+    for (const card of cardsByVideoId.get(videoId) ?? []) {
+      if (isCardInViewport(card)) return true;
+    }
+    return false;
   }
 
   function enqueueTranscript(video) {
@@ -274,7 +324,7 @@
       transcriptNeededVideos.delete(video.videoId);
       const result = response.results[0];
       if (result?.status === "completed" && typeof result.isAi === "boolean") {
-        saveClassification(video.videoId, result.isAi);
+        saveClassification(video.videoId, result.isAi, result.classificationSource);
       } else if (result?.status === "failed") {
         markFailed(video.videoId);
       } else {
@@ -352,15 +402,18 @@
     }
   }
 
-  function saveClassification(videoId, isAi) {
+  function saveClassification(videoId, isAi, source) {
     transcriptNeededVideos.delete(videoId);
+    viewportDeferredIds.delete(videoId);
     failedVideoIds.delete(videoId);
-    classificationByVideoId.set(videoId, isAi);
-    for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, isAi);
+    const classification = { isAi, source: source === "channel" ? "channel" : "video" };
+    classificationByVideoId.set(videoId, classification);
+    for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, classification);
   }
 
   function markFailed(videoId) {
     transcriptNeededVideos.delete(videoId);
+    viewportDeferredIds.delete(videoId);
     classificationByVideoId.delete(videoId);
     failedVideoIds.add(videoId);
     for (const card of cardsByVideoId.get(videoId) ?? []) {
@@ -381,8 +434,72 @@
 
     return {
       videoId,
+      channelId: videoById.get(videoId)?.channelId ?? findChannelId(card, videoId),
       url: `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
     };
+  }
+
+  function rememberVideo(discovered) {
+    const existing = videoById.get(discovered.videoId);
+    if (!existing) {
+      videoById.set(discovered.videoId, discovered);
+      return discovered;
+    }
+    if (!existing.channelId && discovered.channelId) {
+      const enriched = { ...existing, channelId: discovered.channelId };
+      videoById.set(discovered.videoId, enriched);
+      return enriched;
+    }
+    if (existing.channelId && discovered.channelId && existing.channelId !== discovered.channelId) {
+      console.warn(`SlopShield found conflicting channel IDs for ${discovered.videoId}`);
+    }
+    return existing;
+  }
+
+  function findChannelId(card, videoId) {
+    const cached = channelLookupByCard.get(card);
+    if (
+      cached?.videoId === videoId &&
+      (cached.channelId || Date.now() - cached.checkedAt < 5_000)
+    ) {
+      return cached.channelId ?? null;
+    }
+
+    const outer = card.closest("ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer");
+    const roots = new Set([
+      card.data,
+      card.__data,
+      card.__dataHost?.data,
+      outer?.data,
+      outer?.__data,
+      outer?.__dataHost?.data,
+    ]);
+    const seen = new WeakSet();
+    const stack = [...roots].map((value) => ({ value, depth: 0 }));
+    let inspected = 0;
+
+    while (stack.length && inspected < 20_000) {
+      const { value, depth } = stack.pop();
+      inspected += 1;
+      if (typeof value === "string") {
+        if (CHANNEL_ID.test(value)) {
+          channelLookupByCard.set(card, { videoId, channelId: value, checkedAt: Date.now() });
+          return value;
+        }
+        continue;
+      }
+      if (value === null || typeof value !== "object" || depth >= 12 || seen.has(value)) continue;
+      seen.add(value);
+      let children;
+      try {
+        children = Object.values(value);
+      } catch {
+        continue;
+      }
+      for (const child of children) stack.push({ value: child, depth: depth + 1 });
+    }
+    channelLookupByCard.set(card, { videoId, channelId: null, checkedAt: Date.now() });
+    return null;
   }
 
   function addCard(videoId, card) {
@@ -394,10 +511,16 @@
     }
   }
 
-  function applyClassification(card, isAi) {
-    const shouldHide = settings.enabled && !isShortsPage() && isAi;
+  function applyClassification(card, classification) {
+    const shouldHide = settings.enabled && !isShortsPage() && classification.isAi;
     card.classList.toggle(HIDDEN_CLASS, shouldHide);
-    setCardStatus(card, isAi ? (shouldHide ? null : "would-hide") : "verified");
+    const inherited = classification.source === "channel";
+    setCardStatus(
+      card,
+      classification.isAi
+        ? (shouldHide ? null : inherited ? "would-hide-channel" : "would-hide")
+        : inherited ? "verified-channel" : "verified",
+    );
   }
 
   function setCardStatus(card, status) {
@@ -420,9 +543,13 @@
     badge.dataset.status = status;
     badge.textContent = status === "verified"
       ? "✓ Verified"
-      : status === "would-hide"
-        ? "AI detected"
-        : "Checking…";
+      : status === "verified-channel"
+        ? "✓ Channel verified"
+        : status === "would-hide-channel"
+          ? "AI channel"
+          : status === "would-hide"
+            ? "AI detected"
+            : "Checking…";
   }
 
   function clearUnknownCardStatuses() {
@@ -440,8 +567,8 @@
   }
 
   function reapplyKnownClassifications() {
-    for (const [videoId, isAi] of classificationByVideoId) {
-      for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, isAi);
+    for (const [videoId, classification] of classificationByVideoId) {
+      for (const card of cardsByVideoId.get(videoId) ?? []) applyClassification(card, classification);
     }
   }
 
