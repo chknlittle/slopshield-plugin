@@ -23,7 +23,7 @@ Each response entry is one of:
 
 - `completed`: apply the cached `is_ai` result immediately.
 - `queued` or `running`: leave visible and poll later. This may mean the video is waiting for its channel's evidence video.
-- `missing` with `needs_transcript: true`: fetch captions in the browser. The API returns this only for the channel's selected evidence video.
+- `missing` with `needs_transcript: true`: fetch captions in the browser. The API returns this only for a channel's selected primary or confirmation evidence video.
 - `failed`: leave visible and stop retrying automatically.
 
 If the API has a stored transcript but no score for the active engine version, it queues analysis itself and returns `queued`; the browser does not fetch the transcript again.
@@ -48,7 +48,7 @@ Content-Type: application/json
 }
 ```
 
-The API persists the transcript and returns `queued`. Subsequent polls omit the transcript. `evidence_candidate` is true only when a card is in the viewport; once the API has claimed an evidence video, its transcript submission is accepted regardless of that flag.
+The API persists the transcript and returns `queued`. Subsequent polls omit the transcript. `evidence_candidate` is true only when a card is in the viewport; once the API has claimed an evidence video, its transcript submission is accepted regardless of that flag. A benign primary result verifies the channel immediately. A positive channel verdict requires positive results from two different evidence videos.
 
 A response entry has this shape:
 
