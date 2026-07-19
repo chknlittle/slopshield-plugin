@@ -13,6 +13,7 @@
   const STATUS_BADGE_CLASS = "slopshield-status-badge";
   const TRANSCRIPT_REQUEST = "SLOPSHIELD_TRANSCRIPT_REQUEST";
   const TRANSCRIPT_RESPONSE = "SLOPSHIELD_TRANSCRIPT_RESPONSE";
+  const CHANNELS_UPDATED = "SLOPSHIELD_CHANNELS_UPDATED";
   const TRANSCRIPT_CONCURRENCY = 1;
   const TRANSCRIPT_MIN_INTERVAL_MS = 1_000;
   const TRANSCRIPT_BACKOFF_BASE_MS = 30_000;
@@ -43,7 +44,7 @@
   const channelLookupByCard = new WeakMap();
   const viewportObserver = new IntersectionObserver(handleViewportChanges, { threshold: 0.01 });
 
-  window.addEventListener("message", receiveTranscriptResponse);
+  window.addEventListener("message", receivePageMessage);
   void initialize();
 
   async function initialize() {
@@ -387,8 +388,13 @@
     });
   }
 
-  function receiveTranscriptResponse(event) {
-    if (event.source !== window || event.data?.type !== TRANSCRIPT_RESPONSE) return;
+  function receivePageMessage(event) {
+    if (event.source !== window) return;
+    if (event.data?.type === CHANNELS_UPDATED) {
+      scheduleScan(0);
+      return;
+    }
+    if (event.data?.type !== TRANSCRIPT_RESPONSE) return;
     const pending = transcriptRequests.get(event.data.requestId);
     if (!pending) return;
     transcriptRequests.delete(event.data.requestId);
@@ -457,6 +463,10 @@
   }
 
   function findChannelId(card, videoId) {
+    const outer = card.closest("ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer");
+    const annotated = card.dataset.slopshieldChannelId ?? outer?.dataset.slopshieldChannelId;
+    if (CHANNEL_ID.test(annotated ?? "")) return annotated;
+
     const cached = channelLookupByCard.get(card);
     if (
       cached?.videoId === videoId &&
@@ -465,7 +475,6 @@
       return cached.channelId ?? null;
     }
 
-    const outer = card.closest("ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-grid-video-renderer");
     const roots = new Set([
       card.data,
       card.__data,

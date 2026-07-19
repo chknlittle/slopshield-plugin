@@ -4,6 +4,15 @@ import { WebPoMinter } from "bgutils-js/webpo";
 
 const REQUEST_TYPE = "SLOPSHIELD_TRANSCRIPT_REQUEST";
 const RESPONSE_TYPE = "SLOPSHIELD_TRANSCRIPT_RESPONSE";
+const CHANNELS_UPDATED_TYPE = "SLOPSHIELD_CHANNELS_UPDATED";
+const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
+const CARD_SELECTOR = [
+  "ytd-rich-item-renderer",
+  "ytd-video-renderer",
+  "ytd-compact-video-renderer",
+  "ytd-grid-video-renderer",
+  "yt-lockup-view-model",
+].join(",");
 const REQUEST_KEY = "O43z0dpjhgX20SCx4KAo";
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 
@@ -11,7 +20,9 @@ if (!globalThis.__slopShieldTranscriptBridge) {
   globalThis.__slopShieldTranscriptBridge = true;
   let minterPromise = null;
   let minterExpiresAt = 0;
+  let channelScanTimer = null;
 
+  startChannelAnnotations();
   window.addEventListener("message", (event) => {
     if (event.source !== window || event.data?.type !== REQUEST_TYPE) return;
 
@@ -32,6 +43,60 @@ if (!globalThis.__slopShieldTranscriptBridge) {
         }, "*");
       });
   });
+
+  function startChannelAnnotations() {
+    const start = () => {
+      new MutationObserver(scheduleChannelScan)
+        .observe(document.documentElement, { childList: true, subtree: true });
+      scheduleChannelScan();
+    };
+    if (document.documentElement) start();
+    else document.addEventListener("DOMContentLoaded", start, { once: true });
+  }
+
+  function scheduleChannelScan() {
+    if (channelScanTimer !== null) return;
+    channelScanTimer = window.setTimeout(() => {
+      channelScanTimer = null;
+      annotateChannelIds();
+    }, 100);
+  }
+
+  function annotateChannelIds() {
+    let changed = false;
+    for (const card of document.querySelectorAll(CARD_SELECTOR)) {
+      if (CHANNEL_ID.test(card.dataset.slopshieldChannelId ?? "")) continue;
+      const channelId = findChannelIdInRenderer(card);
+      if (!channelId) continue;
+      card.dataset.slopshieldChannelId = channelId;
+      changed = true;
+    }
+    if (changed) window.postMessage({ type: CHANNELS_UPDATED_TYPE }, "*");
+  }
+
+  function findChannelIdInRenderer(card) {
+    const seen = new WeakSet();
+    const stack = [card.data, card.__data, card.__dataHost?.data];
+    let inspected = 0;
+    while (stack.length && inspected < 20_000) {
+      const value = stack.pop();
+      inspected += 1;
+      if (typeof value === "string") {
+        if (CHANNEL_ID.test(value)) return value;
+        continue;
+      }
+      if (value === null || typeof value !== "object" || seen.has(value)) continue;
+      seen.add(value);
+      let children;
+      try {
+        children = Object.values(value);
+      } catch {
+        continue;
+      }
+      for (const child of children) stack.push(child);
+    }
+    return null;
+  }
 
   async function fetchTranscript(videoId) {
     const watchResponse = await fetch(`/watch?v=${encodeURIComponent(videoId)}`, {
