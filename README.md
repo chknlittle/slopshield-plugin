@@ -4,6 +4,22 @@ SlopShield hides videos that the SlopShield API has classified as AI-generated. 
 
 This fork uses the real [`slopshield-api`](https://github.com/chknlittle/slopshield-api). The old mock scores and strictness slider have been removed. Filtering is simply on or off; switching it off reveals already-classified AI cards with provenance badges.
 
+## Built with OpenAI Codex and GPT-5.6
+
+We used OpenAI Codex with GPT-5.6 to build and review the browser extension.
+
+Codex helped connect the extension to the real API.
+
+It helped move YouTube caption retrieval into the user's browser session.
+
+It helped design batching, caching, cooldowns, and fail-open behavior.
+
+It helped harden trust boundaries and validate API messages.
+
+It helped improve consent, privacy text, status badges, and result provenance.
+
+It also helped test the Chrome and Firefox flows.
+
 ## Install in Chrome
 
 1. Open `chrome://extensions`.
