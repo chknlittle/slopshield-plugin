@@ -10,10 +10,12 @@
     <main class="shell">
       <header class="masthead">
         <div class="brand-lockup">
-          <span class="brand-mark" aria-hidden="true">S</span>
+          <span class="brand-mark" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
           <div>
             <h1>SlopShield</h1>
-            <p class="subtitle">YouTube AI filter</p>
+            <p class="subtitle">/ YouTube signal filter</p>
           </div>
         </div>
         <label class="switch" aria-label="Enable SlopShield">
@@ -23,21 +25,39 @@
       </header>
 
       <section class="status-panel" aria-live="polite">
-        <div class="status-copy">
-          <span id="statusDot" class="status-dot"></span>
-          <span id="statusText">Checking engine…</span>
+        <div class="status-row">
+          <div class="status-copy">
+            <span id="statusDot" class="status-dot"></span>
+            <span id="statusText">Checking engine…</span>
+          </div>
+          <span id="latency" class="latency">—</span>
         </div>
-        <span id="latency" class="latency">—</span>
+        <div class="signal-track" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
       </section>
 
       <section class="counter-panel">
-        <p class="counter-label">AI videos hidden on this page</p>
-        <p id="blockedCount" class="counter">00</p>
+        <div>
+          <p class="counter-kicker">Page result / live</p>
+          <p class="counter-label">Videos cleaned</p>
+          <p id="coverageText" class="coverage-text">Waiting for YouTube…</p>
+        </div>
+        <p id="cleanedCount" class="counter">00</p>
+      </section>
+
+      <section class="stats-grid" aria-label="Page protection summary">
+        <div><strong id="blockedCount">00</strong><span>AI hidden</span></div>
+        <div><strong id="checkingCount">00</strong><span>Checking</span></div>
+        <div><strong id="issueCount">00</strong><span>Issues</span></div>
       </section>
 
       <footer>
-        <span>SlopShield API · Cloudflare</span>
-        <span class="version">v0.5</span>
+        <p class="privacy-note">Video metadata and captions are analyzed by the SlopShield API.</p>
+        <div class="footer-meta">
+          <span id="scanTiming">Text signal × voice signal</span>
+          <span class="version">v0.5</span>
+        </div>
       </footer>
     </main>
     <script src="popup.js"></script>

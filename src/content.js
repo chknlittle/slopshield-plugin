@@ -1,5 +1,6 @@
 (() => {
   const extensionApi = globalThis.browser ?? globalThis.chrome;
+  const helpers = globalThis.__slopShieldHelpers;
   const DEFAULT_SETTINGS = { enabled: true };
   const CARD_SELECTOR = [
     "ytd-rich-item-renderer",
@@ -27,6 +28,9 @@
   let transcriptInFlight = 0;
   let transcriptNextStartAt = 0;
   let transcriptFailureStreak = 0;
+  let lastScanMs = 0;
+  let maxScanMs = 0;
+  let scanCount = 0;
   const cardsByVideoId = new Map();
   const videoById = new Map();
   const analysisQueue = new Map();
@@ -113,6 +117,7 @@
 
   function scanPage() {
     if (!settings.enabled || isShortsPage()) return;
+    const scanStartedAt = performance.now();
 
     for (const card of document.querySelectorAll(CARD_SELECTOR)) {
       const discoveredVideo = readVideo(card);
@@ -156,6 +161,9 @@
     }
 
     if (analysisQueue.size > 0) scheduleAnalysis();
+    lastScanMs = performance.now() - scanStartedAt;
+    maxScanMs = Math.max(maxScanMs, lastScanMs);
+    scanCount += 1;
   }
 
   function scheduleAnalysis(delay = 220) {
@@ -184,10 +192,10 @@
       const response = await extensionApi.runtime.sendMessage({ type: "ANALYZE_VIDEOS", videos: batch });
       if (requestGeneration !== generation) return;
       if (!response?.ok) throw new Error(response?.error || "Analysis lookup failed");
+      const resultsByVideoId = helpers.indexAnalysisResults(response.results);
 
-      for (let index = 0; index < batch.length; index += 1) {
-        const video = batch[index];
-        const result = response.results[index];
+      for (const video of batch) {
+        const result = resultsByVideoId.get(video.videoId);
         if (result?.status === "completed" && typeof result.isAi === "boolean") {
           saveClassification(video.videoId, result.isAi, result.classificationSource);
         } else if (result?.status === "missing" && result.needsTranscript === true) {
@@ -325,7 +333,7 @@
 
       // The API now owns the transcript even when analysis remains queued.
       transcriptNeededVideos.delete(video.videoId);
-      const result = response.results[0];
+      const result = helpers.indexAnalysisResults(response.results).get(video.videoId);
       if (result?.status === "completed" && typeof result.isAi === "boolean") {
         saveClassification(video.videoId, result.isAi, result.classificationSource);
       } else if (result?.status === "failed") {
@@ -525,9 +533,9 @@
     thumbnail.classList.add("slopshield-thumbnail");
     badge.dataset.status = status;
     badge.textContent = status === "verified"
-      ? "✓ Verified"
+      ? "✓ No AI detected"
       : status === "verified-channel"
-        ? "✓ Channel verified"
+        ? "✓ No AI detected"
         : status === "would-hide-channel"
           ? "AI channel"
           : status === "would-hide"
@@ -587,16 +595,27 @@
   }
 
   function getPageStats() {
-    const flaggedVideoIds = new Set();
+    const videoIds = new Set();
+    const hiddenVideoIds = new Set();
 
     for (const card of document.querySelectorAll(CARD_SELECTOR)) {
       const videoId = card.dataset.slopshieldVideoId;
-      if (videoId && card.classList.contains(HIDDEN_CLASS)) {
-        flaggedVideoIds.add(videoId);
-      }
+      if (!videoId) continue;
+      videoIds.add(videoId);
+      if (card.classList.contains(HIDDEN_CLASS)) hiddenVideoIds.add(videoId);
     }
 
-    return { flaggedCount: flaggedVideoIds.size };
+    return {
+      ...helpers.summarizeVideoStates({
+        videoIds,
+        classifications: classificationByVideoId,
+        failures: failedVideoIds,
+        hiddenVideoIds,
+      }),
+      lastScanMs: Math.round(lastScanMs * 10) / 10,
+      maxScanMs: Math.round(maxScanMs * 10) / 10,
+      scanCount,
+    };
   }
 
   function isShortsPage() {

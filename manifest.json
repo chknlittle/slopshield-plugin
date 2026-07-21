@@ -46,6 +46,7 @@
         "src/content.css"
       ],
       "js": [
+        "src/content-helpers.js",
         "src/content.js"
       ],
       "run_at": "document_idle"

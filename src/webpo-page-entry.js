@@ -1,6 +1,7 @@
 import { BotGuardClient, getChallenge } from "bgutils-js/botguard";
 import { buildURL, getHeaders } from "bgutils-js/utils";
 import { WebPoMinter } from "bgutils-js/webpo";
+import { executeInterpreter } from "./execute-interpreter.js";
 
 const REQUEST_TYPE = "SLOPSHIELD_TRANSCRIPT_REQUEST";
 const RESPONSE_TYPE = "SLOPSHIELD_TRANSCRIPT_RESPONSE";
@@ -251,7 +252,7 @@ if (!globalThis.__slopShieldTranscriptBridge) {
     const trustedInterpreter = globalThis.trustedTypes
       ? getTrustedTypesPolicy().createScript(interpreter)
       : interpreter;
-    new Function(trustedInterpreter)();
+    executeInterpreter(document, trustedInterpreter);
 
     const botGuard = await BotGuardClient.create({
       program: challenge.program,
