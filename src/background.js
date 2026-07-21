@@ -55,6 +55,7 @@ async function analyzeVideos(videos) {
   return {
     ok: true,
     results: payload.analyses.map((analysis) => ({
+      videoId: analysis.video_id,
       status: analysis.status,
       needsTranscript: analysis.needs_transcript === true,
       isAi: analysis.is_ai,

@@ -1,12 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#17191c"/>
-  <text
-    x="256"
-    y="344"
-    fill="#ffffff"
-    font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif"
-    font-size="272"
-    font-weight="700"
-    text-anchor="middle"
-  >S</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="SlopShield signal mark">
+  <rect width="512" height="512" rx="84" fill="#080c0d"/>
+  <rect x="72" y="72" width="368" height="368" rx="12" fill="#0d1314" stroke="#58e6dc" stroke-width="16"/>
+  <rect x="132" y="282" width="56" height="92" rx="6" fill="#58e6dc" opacity="0.58"/>
+  <rect x="228" y="138" width="56" height="236" rx="6" fill="#58e6dc"/>
+  <rect x="324" y="218" width="56" height="156" rx="6" fill="#58e6dc" opacity="0.82"/>
 </svg>

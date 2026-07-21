@@ -29,7 +29,7 @@ Then:
 
 Firefox removes temporary add-ons when the browser closes. Everyday installation will require a Mozilla-signed XPI.
 
-The popup reports API/engine health and the number of AI videos hidden on the current page.
+The popup reports API/engine health plus truthful current-page coverage: videos cleaned, AI videos hidden, checks still running, unavailable or failed checks, and lightweight scan timing.
 
 ## Behavior
 
@@ -43,7 +43,7 @@ The extension extracts each video's immutable `UC…` channel ID from YouTube re
 
 For missing videos that enter the viewport, the page bridge runs YouTube's BotGuard challenge once, reuses its WebPO minter, mints a content-bound token per video, and fetches timestamped captions through the user's IP/session. Transcript jobs run one at a time with at least 1 second between starts. Transient YouTube/network failures trigger a shared exponential cooldown (30 seconds up to 5 minutes) so one rate limit cannot cause a retry storm. No hidden tabs or video navigation are used.
 
-Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending, `✓ Verified` for a directly analyzed non-AI video, and `✓ Channel verified` for a non-AI verdict inherited from the channel's evidence video. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals direct AI results as `AI detected` and inherited results as `AI channel`, making the disabled state useful as a preview. Failures remain visible with a `Check failed` badge. Videos without an immutable channel ID or usable transcript remain visible with an `Unavailable` badge.
+Results are cached by the backend. Thumbnail badges show `Checking…` while a result is pending and `✓ No AI detected` after either a direct non-AI result or a non-AI verdict inherited from the channel's evidence video. AI-classified cards are hidden while filtering is enabled. Turning filtering off reveals direct AI results as `AI detected` and inherited results as `AI channel`, making the disabled state useful as a preview. Failures remain visible with a `Check failed` badge. Videos without an immutable channel ID or usable transcript remain visible with an `Unavailable` badge.
 
 YouTube Shorts and Shorts shelves are intentionally ignored.
 
@@ -63,6 +63,8 @@ popup/                   On/off switch, health, and hidden count
 
 ## API configuration
 
-The API URL is `https://slopshield-api.chkn.computer`, defined in `src/background.js`. The origin must also appear under `host_permissions` in both browser manifests.
+The API URL is defined in `src/background.js`. Its origin must also appear under `host_permissions` in both browser manifests.
 
 See [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) for the API fields used by the extension.
+
+See [`PRIVACY.md`](PRIVACY.md) for the concise hackathon privacy disclosure mirrored in the popup.

@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build:webpo": "node scripts/build-webpo.mjs",
-    "build:firefox": "node scripts/build-firefox.mjs"
+    "build:firefox": "node scripts/build-firefox.mjs",
+    "test": "node --test"
   },
   "devDependencies": {
     "bgutils-js": "4.0.0",

@@ -1,10 +1,5 @@
-.slopshield-hidden {
-  display: none !important;
-}
-
-.slopshield-thumbnail {
-  position: relative !important;
-}
+.slopshield-hidden { display: none !important; }
+.slopshield-thumbnail { position: relative !important; }
 
 .slopshield-status-badge {
   position: absolute;
@@ -13,45 +8,71 @@
   left: 8px;
   display: inline-flex;
   align-items: center;
-  min-height: 22px;
-  padding: 2px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
-  border-radius: 999px;
-  color: #ffffff;
-  background: rgba(20, 24, 31, 0.9);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-  font: 600 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  letter-spacing: 0.01em;
+  min-height: 23px;
+  padding: 4px 8px;
+  border: 1px solid rgba(88, 230, 220, 0.55);
+  border-radius: 0;
+  color: #eef6f3;
+  background: rgba(8, 12, 13, 0.94);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.34);
+  font: 500 10px/1.2 "SFMono-Regular", "Cascadia Code", Menlo, monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
   pointer-events: none;
   white-space: nowrap;
+  backdrop-filter: blur(5px);
 }
 
-.slopshield-status-badge[data-status="verified"] {
-  border-color: rgba(88, 214, 141, 0.65);
-  background: rgba(15, 105, 65, 0.92);
+.slopshield-status-badge::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #58e6dc;
+  box-shadow: 0 0 8px rgba(88, 230, 220, 0.65);
 }
 
+.slopshield-status-badge[data-status="verified"],
 .slopshield-status-badge[data-status="verified-channel"] {
-  border-color: rgba(92, 210, 206, 0.7);
-  background: rgba(15, 91, 96, 0.94);
+  border-color: #b7f34a;
+  color: #071000;
+  background: #b7f34a;
+  box-shadow: 0 7px 22px rgba(183, 243, 74, 0.22), 0 0 0 1px rgba(8, 12, 13, 0.28) inset;
+  font-weight: 700;
+}
+.slopshield-status-badge[data-status="verified"]::before,
+.slopshield-status-badge[data-status="verified-channel"]::before {
+  width: 6px;
+  height: 6px;
+  background: #071000;
+  box-shadow: none;
 }
 
 .slopshield-status-badge[data-status="processing"] {
-  border-color: rgba(255, 196, 87, 0.65);
-  background: rgba(115, 75, 10, 0.92);
+  border-color: rgba(88, 230, 220, 0.58);
+  color: #c8fffb;
 }
 
 .slopshield-status-badge[data-status="would-hide"],
 .slopshield-status-badge[data-status="would-hide-channel"],
 .slopshield-status-badge[data-status="check-failed"] {
-  border-color: rgba(255, 112, 112, 0.75);
-  background: rgba(145, 35, 35, 0.94);
+  border-color: rgba(255, 114, 98, 0.72);
+  color: #ffc1ba;
+  background: rgba(38, 17, 16, 0.96);
+}
+.slopshield-status-badge[data-status="would-hide"]::before,
+.slopshield-status-badge[data-status="would-hide-channel"]::before,
+.slopshield-status-badge[data-status="check-failed"]::before {
+  background: #ff7262;
+  box-shadow: 0 0 8px rgba(255, 114, 98, 0.56);
 }
 
 .slopshield-status-badge[data-status="unavailable"] {
-  border-color: rgba(190, 195, 205, 0.55);
-  background: rgba(70, 74, 82, 0.92);
+  border-color: rgba(145, 160, 158, 0.48);
+  color: #aab7b5;
 }
+.slopshield-status-badge[data-status="unavailable"]::before { background: #586765; box-shadow: none; }
 
 .slopshield-page-notice {
   position: fixed;
@@ -59,11 +80,14 @@
   left: 16px;
   bottom: 16px;
   max-width: 360px;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 7px;
-  color: #ffffff;
-  background: rgba(30, 30, 30, 0.94);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
-  font: 500 13px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 114, 98, 0.62);
+  border-left: 2px solid #ff7262;
+  border-radius: 0;
+  color: #eef6f3;
+  background: rgba(8, 12, 13, 0.96);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.36);
+  font: 500 11px/1.4 "SFMono-Regular", "Cascadia Code", Menlo, monospace;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }

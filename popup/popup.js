@@ -2,7 +2,12 @@ const extensionApi = globalThis.browser ?? globalThis.chrome;
 const DEFAULT_SETTINGS = { enabled: true };
 
 const enabledInput = document.querySelector("#enabled");
+const cleanedCount = document.querySelector("#cleanedCount");
 const blockedCount = document.querySelector("#blockedCount");
+const checkingCount = document.querySelector("#checkingCount");
+const issueCount = document.querySelector("#issueCount");
+const coverageText = document.querySelector("#coverageText");
+const scanTiming = document.querySelector("#scanTiming");
 const statusDot = document.querySelector("#statusDot");
 const statusText = document.querySelector("#statusText");
 const latency = document.querySelector("#latency");
@@ -42,12 +47,22 @@ async function refreshPageStats() {
     if (!activeTab?.id) throw new Error("No active tab");
 
     const stats = await extensionApi.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_STATS" });
-    renderCount(stats?.flaggedCount ?? 0);
+    renderStats(stats);
   } catch {
-    renderCount(0);
+    renderStats(null);
   }
 }
 
-function renderCount(value) {
-  blockedCount.textContent = String(Math.max(0, Number(value) || 0)).padStart(2, "0");
+function renderStats(stats) {
+  const format = (value) => String(Math.max(0, Number(value) || 0)).padStart(2, "0");
+  cleanedCount.textContent = format(stats?.cleanedCount);
+  blockedCount.textContent = format(stats?.hiddenCount);
+  checkingCount.textContent = format(stats?.checkingCount);
+  issueCount.textContent = format((stats?.failedCount ?? 0) + (stats?.unavailableCount ?? 0));
+  coverageText.textContent = stats
+    ? `${stats.checkedCount} of ${stats.scannedCount} checked`
+    : "Open a YouTube feed to scan";
+  scanTiming.textContent = stats?.scanCount
+    ? `Scan ${stats.lastScanMs}ms · peak ${stats.maxScanMs}ms`
+    : "Text signal × voice signal";
 }
