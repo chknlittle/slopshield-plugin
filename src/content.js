@@ -70,8 +70,15 @@
     });
 
     document.addEventListener("yt-navigate-finish", resetForNavigation);
-    new MutationObserver(() => scheduleScan())
-      .observe(document.documentElement, { childList: true, subtree: true });
+    new MutationObserver((mutations) => {
+      const pageChanged = mutations.some((mutation) => {
+        const target = mutation.target instanceof Element
+          ? mutation.target
+          : mutation.target.parentElement;
+        return !target?.closest(`.${STATUS_BADGE_CLASS}, .slopshield-page-notice`);
+      });
+      if (pageChanged) scheduleScan();
+    }).observe(document.documentElement, { childList: true, subtree: true });
 
     extensionApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message?.type !== "GET_PAGE_STATS") return false;
@@ -531,8 +538,7 @@
       thumbnail.append(badge);
     }
     thumbnail.classList.add("slopshield-thumbnail");
-    badge.dataset.status = status;
-    badge.textContent = status === "verified" || status === "verified-channel"
+    const text = status === "verified" || status === "verified-channel"
       ? "✓ No AI detected"
       : status === "would-hide-channel"
         ? "AI channel"
@@ -543,6 +549,9 @@
             : status === "check-failed"
               ? "Check failed"
               : "Checking…";
+
+    if (badge.dataset.status !== status) badge.dataset.status = status;
+    if (badge.textContent !== text) badge.textContent = text;
   }
 
   function clearUnknownCardStatuses() {
