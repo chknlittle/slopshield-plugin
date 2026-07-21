@@ -63,7 +63,7 @@ popup/                   On/off switch, health, and hidden count
 
 ## API configuration
 
-The API URL is `https://slopshield-api.chkn.computer`, defined in `src/background.js`. The origin must also appear under `host_permissions` in both browser manifests.
+The API URL is defined in `src/background.js`. Its origin must also appear under `host_permissions` in both browser manifests.
 
 See [`docs/API_CONTRACT.md`](docs/API_CONTRACT.md) for the API fields used by the extension.
 
