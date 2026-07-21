@@ -143,7 +143,7 @@
       if (classificationByVideoId.has(video.videoId)) {
         applyClassification(card, classificationByVideoId.get(video.videoId));
       } else if (failedVideoIds.has(video.videoId)) {
-        setCardStatus(card, failedVideoIds.get(video.videoId));
+        applyFailure(card, failedVideoIds.get(video.videoId));
       } else {
         setCardStatus(card, "processing");
         if (!video.channelId) {
@@ -439,10 +439,13 @@
     viewportDeferredIds.delete(videoId);
     classificationByVideoId.delete(videoId);
     failedVideoIds.set(videoId, status);
-    for (const card of cardsByVideoId.get(videoId) ?? []) {
-      card.classList.remove(HIDDEN_CLASS);
-      setCardStatus(card, status);
-    }
+    for (const card of cardsByVideoId.get(videoId) ?? []) applyFailure(card, status);
+  }
+
+  function applyFailure(card, status) {
+    const shouldHide = settings.enabled && !isShortsPage() && status === "check-failed";
+    card.classList.toggle(HIDDEN_CLASS, shouldHide);
+    setCardStatus(card, shouldHide ? null : status);
   }
 
   function readVideo(card) {
@@ -559,7 +562,7 @@
       const videoId = card.dataset.slopshieldVideoId;
       if (classificationByVideoId.has(videoId)) continue;
       if (failedVideoIds.has(videoId)) {
-        setCardStatus(card, failedVideoIds.get(videoId));
+        applyFailure(card, failedVideoIds.get(videoId));
       } else if (videoById.get(videoId)?.channelUnavailable) {
         setCardStatus(card, "unavailable");
       } else {
