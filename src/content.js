@@ -532,19 +532,17 @@
     }
     thumbnail.classList.add("slopshield-thumbnail");
     badge.dataset.status = status;
-    badge.textContent = status === "verified"
+    badge.textContent = status === "verified" || status === "verified-channel"
       ? "✓ No AI detected"
-      : status === "verified-channel"
-        ? "✓ No AI detected"
-        : status === "would-hide-channel"
-          ? "AI channel"
-          : status === "would-hide"
-            ? "AI detected"
-            : status === "unavailable"
-              ? "Unavailable"
-              : status === "check-failed"
-                ? "Check failed"
-                : "Checking…";
+      : status === "would-hide-channel"
+        ? "AI channel"
+        : status === "would-hide"
+          ? "AI detected"
+          : status === "unavailable"
+            ? "Unavailable"
+            : status === "check-failed"
+              ? "Check failed"
+              : "Checking…";
   }
 
   function clearUnknownCardStatuses() {
